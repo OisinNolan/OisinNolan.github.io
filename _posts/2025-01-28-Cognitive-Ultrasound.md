@@ -1,6 +1,7 @@
 ---
 layout: post
 title: Cognitive Ultrasound
+excerpt: An introduction to cognitive ultrasound with a GIF demonstrating an active scan-line selection agent.
 ---
 ## Ultrasound Line-Scanning Agent
 ![[ulsa.gif]]
