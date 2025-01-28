@@ -11,14 +11,10 @@
             "id": "a42e899b27b8c65d",
             "type": "leaf",
             "state": {
-              "type": "markdown",
-              "state": {
-                "file": "_posts/2025-01-28-Cognitive-Ultrasound.md",
-                "mode": "source",
-                "source": false
-              },
+              "type": "empty",
+              "state": {},
               "icon": "lucide-file",
-              "title": "2025-01-28-Cognitive-Ultrasound"
+              "title": "New tab"
             }
           }
         ]
@@ -93,7 +89,6 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "_posts/2025-01-28-Cognitive-Ultrasound.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -103,7 +98,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for 2025-01-28-Cognitive-Ultrasound"
+              "title": "Backlinks"
             }
           },
           {
@@ -112,12 +107,11 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "_posts/2025-01-28-Cognitive-Ultrasound.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Outgoing links from 2025-01-28-Cognitive-Ultrasound"
+              "title": "Outgoing links"
             }
           },
           {
@@ -138,11 +132,9 @@
             "type": "leaf",
             "state": {
               "type": "outline",
-              "state": {
-                "file": "_posts/2025-01-28-Cognitive-Ultrasound.md"
-              },
+              "state": {},
               "icon": "lucide-list",
-              "title": "Outline of 2025-01-28-Cognitive-Ultrasound"
+              "title": "Outline"
             }
           }
         ]
@@ -164,6 +156,7 @@
   },
   "active": "a42e899b27b8c65d",
   "lastOpenFiles": [
+    "_posts/2025-01-28-Cognitive-Ultrasound.md",
     "pages/cognitive_ultrasound.html",
     "pages",
     "_pages/cognitive_ultrasound.html",
