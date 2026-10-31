@@ -1,8 +1,6 @@
 ---
 layout: post
-title: From Limits on Sensing to Limits on Perception
-description: Recasting the Nyquist and diffraction limits in information-theoretic terms, and how priors and computation let perception go beyond what sensing alone allows.
-tags: [essay, information theory]
+title: "From limits on sensing to limits on perception"
 math: true
 originally:
   site: Centuriae

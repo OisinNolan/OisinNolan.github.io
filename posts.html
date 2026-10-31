@@ -7,12 +7,8 @@ permalink: /posts/
   {% for post in site.posts %}
   {% assign href = post.link | default: post.url %}
   <li>
-    <a class="title" href="{{ href | relative_url }}">{{ post.title }}</a>
-    {% if post.description %}<p class="desc">{{ post.description }}</p>{% endif %}
-    <p class="meta">
-      <time datetime="{{ post.date | date_to_xmlschema }}">{{ post.date | date: "%b %Y" }}</time>
-      {% for tag in post.tags %}<span class="tag">{{ tag }}</span>{% endfor %}
-    </p>
+    <a href="{{ href | relative_url }}">{{ post.title }}</a>
+    <time datetime="{{ post.date | date_to_xmlschema }}">{{ post.date | date: "%b %Y" }}</time>
   </li>
   {% endfor %}
 </ul>

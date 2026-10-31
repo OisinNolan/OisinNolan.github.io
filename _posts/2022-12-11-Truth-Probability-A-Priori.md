@@ -1,8 +1,6 @@
 ---
 layout: post
-title: Truth, Probability, and the A Priori
-description: Notes on A. J. Ayer's Language, Truth & Logic, and why a priori maths works so well for describing an empirical world.
-tags: [essay, philosophy]
+title: "Truth, probability, and the <em>a priori</em>"
 ---
 
 This essay is based on ideas from A. J. Ayer's book [*Language, Truth, & Logic*](https://en.wikipedia.org/wiki/Language,_Truth,_and_Logic). The first two sections detail my understanding of some concepts from this book, and the final section shares a short reflection.

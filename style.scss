@@ -45,14 +45,8 @@ a:hover { color: var(--accent); text-decoration-color: currentColor; }
 
 /* header */
 
-.site-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 4rem;
-}
-.site-name { font-weight: 600; text-decoration: none; letter-spacing: -0.01em; }
-.site-header nav { display: flex; gap: 1.25rem; }
+.site-header { margin-bottom: 4rem; }
+.site-header nav { display: flex; gap: 0.6rem; color: var(--muted); }
 .site-header nav a { color: var(--muted); text-decoration: none; }
 .site-header nav a:hover,
 .site-header nav a[aria-current] { color: var(--text); }
@@ -67,8 +61,8 @@ h3 { font-size: 1.1rem; margin: 2rem 0 0.5rem; }
 
 /* about */
 
-.intro { display: flex; gap: 1.5rem; align-items: center; margin-bottom: 2rem; }
-.avatar { width: 84px; height: 84px; border-radius: 50%; flex: none; }
+.intro { display: flex; gap: 1.75rem; align-items: center; margin-bottom: 2rem; }
+.portrait { width: 136px; height: 172px; border-radius: 50%; object-fit: cover; object-position: 50% 28%; flex: none; }
 .intro h1 { margin: 0; }
 .intro p { margin: 0.2rem 0 0; color: var(--muted); }
 
@@ -80,12 +74,10 @@ h3 { font-size: 1.1rem; margin: 2rem 0 0.5rem; }
 /* post list */
 
 .post-list { list-style: none; padding: 0; margin: 0; }
-.post-list li { padding: 1.35rem 0; border-top: 1px solid var(--line); }
-.post-list li:last-child { border-bottom: 1px solid var(--line); }
-.post-list .title { font-size: 1.1rem; font-weight: 600; text-decoration: none; }
-.post-list .desc { margin: 0.3rem 0 0.4rem; }
-.post-list .meta { display: flex; flex-wrap: wrap; gap: 0 0.6rem; font-size: 0.85rem; }
-.tag { border: 1px solid var(--line); border-radius: 99px; padding: 0 0.55rem; font-size: 0.78rem; }
+.post-list li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 0.1rem 1.5rem; margin: 0 0 1.1rem; }
+.post-list a { color: var(--accent); text-decoration: underline; text-decoration-color: currentColor; }
+.post-list a:hover { text-decoration-thickness: 2px; }
+.post-list time { color: var(--muted); font-size: 0.9rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 /* post */
 
@@ -100,6 +92,10 @@ h3 { font-size: 1.1rem; margin: 2rem 0 0.5rem; }
 .prose code { font-family: var(--mono); font-size: 0.85em; background: var(--code-bg); padding: 0.1em 0.3em; border-radius: 3px; }
 .prose pre { background: var(--code-bg); padding: 1rem; overflow-x: auto; border-radius: 4px; }
 .prose pre code { background: none; padding: 0; }
+.prose .caption { text-align: center; color: var(--muted); font-family: var(--sans); font-size: 0.85rem; }
+.prose .caption img { margin-bottom: 0.6rem; }
+.prose .video { position: relative; aspect-ratio: 16 / 9; margin: 0 0 2rem; }
+.prose .video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; border-radius: 4px; }
 .prose .katex-display { overflow-x: auto; overflow-y: hidden; padding: 0.25rem 0; }
 
 .post-footer { margin-top: 4rem; padding-top: 1.5rem; border-top: 1px solid var(--line); font-size: 0.9rem; }
