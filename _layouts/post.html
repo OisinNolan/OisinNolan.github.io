@@ -1,17 +1,20 @@
 ---
 layout: default
 ---
-
 <article class="post">
-  <h1>{{ page.title }}</h1>
+  <header class="post-header">
+    <h1>{{ page.title }}</h1>
+    <p class="meta">
+      <time datetime="{{ page.date | date_to_xmlschema }}">{{ page.date | date: "%-d %B %Y" }}</time>
+      {% if page.originally %}· originally published on <a href="{{ page.originally.url }}">{{ page.originally.site }}</a>{% endif %}
+    </p>
+  </header>
 
-  <div class="entry">
+  <div class="prose">
     {{ content }}
   </div>
 
-  <div class="date">
-    Written on {{ page.date | date: "%B %e, %Y" }}
-  </div>
-
-  {% include disqus.html %}
+  <footer class="post-footer">
+    <a href="{{ '/posts/' | relative_url }}">← all posts</a>
+  </footer>
 </article>
