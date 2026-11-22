@@ -165,14 +165,18 @@ class Graph:
                 lowest.append(c)
         return sorted(lowest, key=lambda c: da[c]["d"] + db[c]["d"])
 
-    def ghosts(self, dag, other_dag, other_line, exclude):
+    def ghosts(self, dag, other_dag, other_line, exclude, self_only=False):
         """Lowest node on `dag` with descendants in the other language line that aren't on
         the other word's own path. Returns {"from", "branches": [[keys…]], "dead"} or None.
         Branches stop at the first modern-language word (no compounds like nim -> nimber)."""
         modern = MODERN["en" if other_line is EN_LINE else "nl"]
         passable = other_line | {"gmw-pro"}
         for n in sorted(dag, key=lambda k: dag[k]["d"]):
-            if n in exclude or dag[n].get("ax") or dag[n]["d"] == 0 or lang_of(n) == "ine-pro":
+            # self_only: words the other language borrowed from this very word (vrolijk -> frolic);
+            # otherwise: relatives through an ancestor (hond -> hound)
+            if self_only != (dag[n]["d"] == 0):
+                continue
+            if n in exclude or dag[n].get("ax") or lang_of(n) == "ine-pro":
                 continue
             branches = []
 
@@ -229,14 +233,14 @@ class Graph:
         exclude_a = set(l) | set().union(*(self.ancestors_of(da, c) for c in l)) if l else set()
         exclude_b = set(l) | set().union(*(self.ancestors_of(db, c) for c in l)) if l else set()
         ghosts = []
-        g = self.ghosts(db, da, EN_LINE, exclude_b)
-        if g:
-            g["side"] = "nl"
-            ghosts.append(g)
-        g = self.ghosts(da, db, NL_LINE, exclude_a)
-        if g:
-            g["side"] = "en"
-            ghosts.append(g)
+        for dag, other, line, excl, side in ((db, da, EN_LINE, exclude_b, "nl"), (da, db, NL_LINE, exclude_a, "en")):
+            for self_only in (True, False):
+                g = self.ghosts(dag, other, line, excl, self_only)
+                if g:
+                    g["side"] = side
+                    if self_only:
+                        g["loan"] = True   # borrowed from the word itself
+                    ghosts.append(g)
         flags = {"en": sorted(self.flags.get((en_k, ee), ())), "nl": sorted(self.flags.get((nl_k, ne), ()))}
         if l:
             if l[0] == nl_k:

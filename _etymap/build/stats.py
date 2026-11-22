@@ -152,9 +152,9 @@ def main():
             kind = "cognate_routes" if bor else "cognate"
         elif no_data:
             kind = "no_data"
-        elif any(any(lang_of(b[-1]) in ("en", "nl") for b in g["branches"]) for g in p["ghosts"]):
+        elif any(any(lang_of(b[-1]) in ("en", "nl") for b in g["branches"]) for g in p["ghosts"] if not g.get("loan")):
             kind = "cousin"
-        elif p["ghosts"]:
+        elif any(not g.get("loan") for g in p["ghosts"]):
             kind = "dead_cousin"
         else:
             kind = "unrelated"
@@ -215,7 +215,7 @@ def main():
         cnt[fam] += 1
         cousin, dead = None, None
         if kind == "replaced":
-            g = next((g for g in p["ghosts"] if g["side"] == "nl"), None)
+            g = next((g for g in p["ghosts"] if g["side"] == "nl" and not g.get("loan")), None)
             keys = [k for k, _, _ in main]
             if g and g["from"] in keys and not any(t == "cmp" for _, t, _ in main[:keys.index(g["from"])]):
                 leaf = next((b[-1] for b in g["branches"] if lang_of(b[-1]) == "en"), None)
@@ -243,6 +243,8 @@ def main():
             if p["lca"] or p["flags"].get("loan"):
                 continue
             for g in p["ghosts"]:
+                if g.get("loan"):
+                    continue   # borrowed from the word itself (vrolijk -> frolic): not a cognate
                 target = "en" if g["side"] == "nl" else "nl"
                 main = chain(p, g["side"])
                 keys = [k for k, _, _ in main]

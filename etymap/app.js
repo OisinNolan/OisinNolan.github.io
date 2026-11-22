@@ -159,7 +159,8 @@ function buildModel(pair, nodes) {
       let prev = g.from;
       for (const k of br) {
         const it = add(k, "ghost-" + line);
-        if (!it.parents.some((q) => q.k === prev)) it.parents.push({ k: prev, t: "ghost", u: false, ghost: true });
+        // a word borrowed from the other language's word itself (vrolijk -> frolic) is drawn as a borrowing
+        if (!it.parents.some((q) => q.k === prev)) it.parents.push({ k: prev, t: g.loan ? "bor" : "ghost", u: false, ghost: true });
         ghostEdges.push([prev, k]);
         prev = k;
       }
@@ -382,8 +383,8 @@ function screenPos(l) {
 
 function sideClass(it) { return it.lca ? "lca" : it.side; }
 function arcClass(child, p) {
-  const s = child.side.startsWith("ghost") ? `ghost ${child.side}` : child.side;
-  return `arc ${s} ${p.ghost ? "ghost" : p.t}`;
+  const s = child.side.startsWith("ghost") ? `${p.t === "bor" ? "" : "ghost "}${child.side}` : child.side;
+  return `arc ${s} ${p.ghost && p.t === "ghost" ? "ghost" : p.t}`;
 }
 
 function drawStatic() {
@@ -648,7 +649,7 @@ function layoutTree(width) {
   const edges = [];
   const link = (child, parent, ghost) => {
     const p = model.info.get(child).parents.find((q) => q.k === parent);
-    edges.push({ c: child, p: parent, t: ghost ? "ghost" : (p?.t || "inh"), u: !!p?.u, ghost });
+    edges.push({ c: child, p: parent, t: ghost && p?.t !== "bor" ? "ghost" : (p?.t || "inh"), u: !!p?.u, ghost });
   };
   const addChain = (keys, name) => keys.forEach((k, i) => {
     if (!col.has(k)) col.set(k, name);
@@ -716,7 +717,7 @@ function drawTree() {
   for (const e of tree.edges) {
     const [x1, y1] = pos(e.p), [x2, y2] = pos(e.c);
     const ym = (y1 + y2) / 2;
-    ge.append("path").attr("class", `te ${lineOf(e.c)} ${e.t}`).datum(e)
+    ge.append("path").attr("class", `te ${e.t === "bor" ? lineOf(e.c).replace(" ghost", "") : lineOf(e.c)} ${e.t}`).datum(e)
       .attr("d", x1 === x2 ? `M${x1},${y1}V${y2}` : `M${x1},${y1}C${x1},${ym} ${x2},${ym} ${x2},${y2}`);
   }
   const gn = s.append("g");
@@ -859,6 +860,12 @@ function renderPanel(state) {
       const modern = leaves.filter((x) => x.n[1] === line);
       const wordBtn = (k) => el("button", { type: "button", class: "wl", onclick: () => focusNode(k) }, model.info.get(k).n[0]);
       const box = el("div", { class: "ghostbox" });
+      if (g.loan) {   // the other language borrowed this very word (vrolijk -> frolic)
+        box.append(el("p", {}, `${NAME[line]} borrowed ${NAME[g.side]} `, wordBtn(g.from), " as ",
+          ...modern.flatMap((x, i) => [i ? (i === modern.length - 1 ? " and " : ", ") : "", el("b", {}, wordBtn(x.key))]), "."));
+        panel.append(box);
+        continue;
+      }
       box.append(el("p", {},
         `${NAME[g.side]} `, el("i", {}, model.info.get(pair[g.side]).n[0]), " goes back to ", wordBtn(g.from),
         ` (${nodeLang(from.n).name}), which also gave ${NAME[line]} `,
@@ -895,14 +902,24 @@ function summary(state) {
     parts.push(anyBor ? "Both go back to " : "Cognates: both descend from ", L.name, " ", el("em", {}, it.n[0]),
       L.from != null ? ` (${fmtRange(L)})` : "", anyBor ? ", by different routes." : ".");
   } else if (pair.ghosts?.length) {
-    const g = pair.ghosts[0];
-    const line = g.side === "nl" ? "en" : "nl";
-    const leaf = g.branches.map((b) => model.info.get(b[b.length - 1])).find((x) => x.n[1] === line);
-    parts.push("No common ancestor: these are unrelated words. ");
-    if (leaf) parts.push("But ", NAME[g.side], " ", w(g.side), " has an ", NAME[line], " cousin: ", el("em", {}, leaf.n[0]), ".");
-    else parts.push(NAME[g.side], " ", w(g.side), " once had an ", NAME[line], " relative, but that branch died out.");
+    const leafOf = (g) => g.branches.map((b) => model.info.get(b[b.length - 1])).find((x) => x.n[1] === (g.side === "nl" ? "en" : "nl"));
+    const cog = pair.ghosts.find((g) => !g.loan);
+    const loan = pair.ghosts.find((g) => g.loan && leafOf(g));
+    // name the two words: "unrelated" is about the translation pair, not about the relatives found
+    parts.push(w(state.dir), " and ", w(OTHER[state.dir]), " are not related. ");
+    if (cog) {
+      const line = cog.side === "nl" ? "en" : "nl", leaf = leafOf(cog);
+      if (leaf) parts.push("But ", w(cog.side), " does have an ", NAME[line], " relative: ", el("em", {}, leaf.n[0]), ". ");
+      else parts.push(w(cog.side), " once had an ", NAME[line], " relative, but it has died out. ");
+    }
+    if (loan) {
+      const line = loan.side === "nl" ? "en" : "nl";
+      const as = leafOf(loan).n[0], same = as.toLowerCase() === model.info.get(pair[loan.side]).n[0].toLowerCase();
+      if (same) parts.push(cog ? "And " : "But ", NAME[line], " has also borrowed ", w(loan.side), " itself.");
+      else parts.push(cog ? "And " : "But ", NAME[line], " did borrow ", w(loan.side), ": it became ", el("em", {}, as), ".");
+    }
   } else {
-    parts.push("No common ancestor found in Wiktionary's data.");
+    parts.push("No link found between ", w(state.dir), " and ", w(OTHER[state.dir]), " in Wiktionary's data.");
   }
   const notes = [];
   for (const side of ["en", "nl"]) {
