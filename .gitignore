@@ -9,3 +9,6 @@ node_modules
 package.json
 .jekyll-cache
 vendor
+
+# Etymap generated data is hosted on Hugging Face (see _etymap/hf_upload.py)
+etymap/data/

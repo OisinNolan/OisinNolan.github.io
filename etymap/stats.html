@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Etymap in numbers · Oisín Nolan</title>
+<meta name="description" content="Corpus-level statistics from Etymap: how often English and Dutch words share an ancestor, where they meet, where each language borrowed from, and hidden cousins.">
+<style>
+  :root {
+    --bg: #fcfcfa; --text: #1c1c1c; --muted: #6b6b6b; --line: #e6e4df; --accent: #2f5bd3; --code-bg: #f2f1ed;
+    --en: #2f5bd3; --nl: #d0611c; --bar: #57534c; --bar2: #b3ada3; --track: #efede8; --gold: #b8860b;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --serif: "Iowan Old Style", "Charter", "Palatino Linotype", Georgia, serif;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #121212; --text: #e8e6e3; --muted: #9a9894; --line: #2a2a2a; --accent: #8fb0ff; --code-bg: #1d1d1d;
+      --en: #5f86e6; --nl: #d9722f; --bar: #b9b3a9; --bar2: #6b665f; --track: #1f1e1c; --gold: #e6be5a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #121212; --text: #e8e6e3; --muted: #9a9894; --line: #2a2a2a; --accent: #8fb0ff; --code-bg: #1d1d1d;
+    --en: #5f86e6; --nl: #d9722f; --bar: #b9b3a9; --bar2: #6b665f; --track: #1f1e1c; --gold: #e6be5a;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0 auto; max-width: 46rem; padding: 3rem 1.25rem 5rem; background: var(--bg); color: var(--text);
+         font: 16px/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
+  a { color: inherit; text-decoration-color: var(--line); text-underline-offset: 0.2em; }
+  a:hover { color: var(--accent); text-decoration-color: currentColor; }
+  .top { display: flex; justify-content: space-between; margin-bottom: 3rem; font-size: 0.9rem; }
+  .top a { color: var(--muted); text-decoration: none; }
+  .top a:hover { color: var(--text); }
+  h1 { font-size: 1.9rem; line-height: 1.25; letter-spacing: -0.015em; margin: 0 0 0.5rem; }
+  h2 { font-size: 1.25rem; letter-spacing: -0.01em; margin: 3.2rem 0 0.4rem; }
+  .lede, .prose { font: 1.08rem/1.65 var(--serif); }
+  .lede { margin: 0 0 1.6rem; }
+  .prose p { margin: 0 0 1rem; }
+  .note { color: var(--muted); font-size: 0.85rem; margin: 0.6rem 0 0; }
+  .w { font-family: var(--serif); font-style: italic; }
+  a.w { text-decoration-color: var(--line); }
+
+  /* stat tiles */
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.8rem; margin: 1.6rem 0 0.4rem; }
+  .tile { border: 1px solid var(--line); border-radius: 10px; padding: 0.7rem 0.9rem; }
+  .tile .v { font-size: 1.6rem; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .tile .l { font-size: 0.82rem; color: var(--muted); }
+
+  /* bar rows (HTML bars: thin, rounded data-end, square at the baseline) */
+  .bars { margin: 1.2rem 0 0; }
+  .row { display: grid; grid-template-columns: minmax(9rem, 15rem) 1fr; gap: 0.2rem 1rem; align-items: center;
+         padding: 0.45rem 0; border-top: 1px solid var(--line); }
+  .row:last-child { border-bottom: 1px solid var(--line); }
+  .row .lab { font-size: 0.92rem; line-height: 1.3; }
+  .row .lab small { display: block; color: var(--muted); font-size: 0.78rem; }
+  .row .ex { grid-column: 2; font-size: 0.85rem; color: var(--muted); line-height: 1.4; }
+  .row .ex .w { color: var(--text); }
+  .track { position: relative; height: 14px; display: flex; align-items: center; gap: 0.5rem; }
+  .bar { height: 14px; border-radius: 0 4px 4px 0; background: var(--bar); min-width: 2px; }
+  .bar.alt { background: var(--bar2); }
+  .bar.en { background: var(--en); } .bar.nl { background: var(--nl); }
+  .val { font-size: 0.82rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .val b { font-weight: 600; }
+  .val span { color: var(--muted); }
+  .legend { display: flex; flex-wrap: wrap; gap: 0.3rem 1.2rem; font-size: 0.82rem; color: var(--muted); margin: 0.8rem 0 0; }
+  .sw { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 2px; margin-right: 0.35rem; vertical-align: -0.05rem; }
+
+  /* two small multiples side by side */
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 1.6rem; margin-top: 1rem; }
+  .pair h3 { font-size: 0.95rem; margin: 0 0 0.4rem; display: flex; align-items: center; gap: 0.4rem; }
+  .mini { display: grid; grid-template-columns: 7.2rem 1fr; gap: 0.15rem 0.6rem; align-items: center; font-size: 0.85rem; }
+  .mini .track { height: 12px; }
+  .mini .bar { height: 12px; }
+
+  /* tables */
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin-top: 1rem; }
+  th, td { text-align: left; padding: 0.45rem 0.5rem 0.45rem 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .dead { color: var(--muted); }
+
+  /* tabs + cousin cards */
+  .tabs { display: flex; gap: 0.4rem; margin: 1.1rem 0 0.8rem; }
+  .tabs button { font: inherit; font-size: 0.88rem; padding: 0.3rem 0.85rem; border-radius: 99px; border: 1px solid var(--line);
+                 background: none; color: var(--text); cursor: pointer; }
+  .tabs button[aria-selected="true"] { border-color: var(--text); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr)); gap: 0.7rem; }
+  .card { border: 1px solid var(--line); border-radius: 10px; padding: 0.7rem 0.85rem 0.75rem; font-size: 0.88rem; line-height: 1.45; }
+  .card .head { font: 1.1rem var(--serif); margin-bottom: 0.25rem; display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; }
+  .card .head .arrow { color: var(--muted); font-family: var(--sans); font-size: 0.9rem; }
+  .k { display: inline-block; width: 0.55rem; height: 0.55rem; border-radius: 50%; }
+  .k.en { background: var(--en); } .k.nl { background: var(--nl); }
+  .card .g { color: var(--muted); }
+  .more { margin-top: 0.8rem; font: inherit; font-size: 0.88rem; background: none; border: 1px solid var(--line); border-radius: 99px;
+          padding: 0.3rem 0.9rem; color: var(--text); cursor: pointer; }
+
+  /* tooltip */
+  #tip { position: fixed; z-index: 10; pointer-events: none; max-width: 18rem; background: var(--bg); color: var(--text);
+         border: 1px solid var(--line); border-radius: 8px; padding: 0.45rem 0.65rem; font-size: 0.82rem; line-height: 1.4;
+         box-shadow: 0 6px 20px #0002; opacity: 0; transition: opacity 0.1s; }
+  #tip.on { opacity: 1; }
+
+  .terms { margin: 0.4rem 0 1.4rem; border: 1px solid var(--line); border-radius: 10px; padding: 0.6rem 1rem; }
+  .terms summary { cursor: pointer; font-weight: 600; font-size: 0.95rem; }
+  .terms dl { margin: 0.6rem 0 0.3rem; font-size: 0.92rem; line-height: 1.5; }
+  .terms dt { font-weight: 600; margin-top: 0.6rem; }
+  .terms dd { margin: 0.1rem 0 0; color: var(--text); }
+  .terms em { font-family: var(--serif); }
+  .foot { margin-top: 3.5rem; padding-top: 1.2rem; border-top: 1px solid var(--line); font-size: 0.85rem; color: var(--muted); }
+  @media (max-width: 640px) {
+    .tiles { grid-template-columns: 1fr 1fr; }
+    .row { grid-template-columns: 1fr; }
+    .row .ex { grid-column: 1; }
+    .pair { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<nav class="top"><a href="./">← back to etymap</a><a href="how.html">how it works</a></nav>
+
+<h1>Etymap in numbers</h1>
+<details class="terms">
+<summary>Linguistics Jargon Glossary</summary>
+<dl>
+  <dt>Headword</dt><dd>A word that has its own dictionary entry (<em>take</em>), as opposed to an inflected form
+  (<em>took</em>) or a phrase.</dd>
+  <dt>Etymology</dt><dd>The history of a word: where it came from and how it changed.</dd>
+  <dt>Inherited</dt><dd>Passed down from parent to child language within the same family, e.g. from Old English to
+  Middle English to English.</dd>
+  <dt>Borrowed (a loanword)</dt><dd>Taken over from a different language, e.g. English <em>coffee</em> from Dutch
+  <em>koffie</em>.</dd>
+  <dt>Cognates</dt><dd>Words in two languages that were each inherited from the same ancestor word, like English
+  <em>water</em> and Dutch <em>water</em>, or <em>fish</em> and <em>vis</em>. Cognates are relatives, not
+  translations: they can drift apart in meaning.</dd>
+  <dt>Common ancestor</dt><dd>The most recent word that both words descend from.</dd>
+  <dt>Proto-Germanic, Proto-West Germanic, Proto-Indo-European</dt><dd>Ancestor languages that were never written
+  down. Scholars reconstruct their words by comparing the languages descended from them, and mark these
+  reconstructed words with an asterisk (*<em>watar</em>). Proto-West Germanic is the shared ancestor of English,
+  Dutch, German and Frisian (roughly 200 BCE to 500 CE). Proto-Germanic is the older ancestor of all Germanic
+  languages, including the Scandinavian ones. Proto-Indo-European is older still: the ancestor of most European
+  languages and of many in Iran and India.</dd>
+  <dt>Native Germanic</dt><dd>A word that goes back through the Germanic family itself rather than being borrowed
+  from Latin, French and so on.</dd>
+  <dt>Language stage</dt><dd>A period in a language's history, such as Old English (c. 450–1150) or Middle Dutch
+  (c. 1150–1500).</dd>
+</dl>
+</details>
+<p class="lede">Statistics across every English and Dutch word in Wiktionary that has a translation into the
+other language: how often a word and its translation are related, which ancestor they share, where each language
+got its words from, and which related words are hiding in plain sight.</p>
+
+<div class="tiles" id="tiles"></div>
+<p class="note">Only single words are counted, not phrases. Where a word has several translations, the statistics
+use its main one, so each word counts once. Click any example to open it on the map.</p>
+
+
+<h2>How is each English word related to its Dutch translation?</h2>
+<p class="prose">For each English headword and its main Dutch translation: are they cognates, did one language
+borrow the word from the other, or are they unrelated words?</p>
+<div class="bars" id="kinds"></div>
+
+<h2>Which ancestor do related words share?</h2>
+<p class="prose">For pairs that share a common ancestor, the language that ancestor belonged to, oldest at the
+top. The bars are shaded by whether the ancestor was inherited (Germanic or Proto-Indo-European) or is an outside
+language that both English and Dutch borrowed from, usually Latin or French.</p>
+<div class="legend"><span><i class="sw" style="background:var(--bar)"></i>inherited ancestor</span><span><i class="sw" style="background:var(--bar2)"></i>both borrowed from it</span></div>
+<div class="bars" id="lca"></div>
+<p class="note">Dates are the rough lifetime of each language stage, not when the two words actually split.</p>
+
+<h2>Where English replaced an old Germanic word with a borrowed one</h2>
+<p class="prose" id="replaced-intro"></p>
+<div class="bars" id="replaced"></div>
+<table id="replaced-table"><thead><tr><th>English (borrowed from)</th><th>Dutch (inherited)</th><th>English's own cognate</th></tr></thead><tbody></tbody></table>
+<p class="note">† = the English cognate has died out and exists only in Old or Middle English. Cognates are found automatically, so a few are wrong (<span class="w">bult</span> → <span class="w">down</span> is one).</p>
+
+<h2>Where Dutch made a new word from its own parts, but English borrowed one</h2>
+<p class="prose" id="built-intro"></p>
+<div class="bars" id="built"></div>
+
+<h2>Where do English and Dutch words come from?</h2>
+<p class="prose">For each headword, the first language outside its own line (English or Dutch and their older
+stages) that it can be traced to. "Native Germanic" means it goes straight back to Proto-West Germanic or older;
+anything else is the language it was borrowed from. Percentages are out of headwords that have an etymology on
+Wiktionary.</p>
+<div class="pair" id="fingerprint"></div>
+
+<h2>Related words that aren't translations of each other</h2>
+<p class="prose">Some words have a cognate in the other language that is <em>not</em> their translation. Dutch
+<em>klein</em> means "small", but its English cognate is <em>clean</em>. They are ranked by how common the words
+are and split into two groups: cognates whose meaning drifted apart, and cognates that still mean the same thing
+but are no longer the usual word for it.</p>
+<div class="tabs" role="tablist">
+  <button role="tab" aria-selected="true" data-tab="drifted">Meaning drifted</button>
+  <button role="tab" aria-selected="false" data-tab="same">Same meaning, different word</button>
+</div>
+<div class="cards" id="cousins"></div>
+<button class="more" id="cousins-more" type="button">Show more</button>
+<p class="note">Found automatically from Wiktionary's lists of descendant words, so a few are wrong. This usually
+happens where two different words are spelled the same (homographs).</p>
+
+<h2>How reliable is the data?</h2>
+<p class="prose">Wiktionary marks where scholars are unsure, and Etymap keeps track of it. The share of headwords
+whose history is…</p>
+<table id="unc"><thead><tr><th></th><th>English</th><th>Dutch</th></tr></thead><tbody></tbody></table>
+
+<p class="foot">Data: English Wiktionary via Wiktextract / kaikki.org, CC BY-SA 4.0. Statistics computed when the site
+is built (<code>_etymap/build/stats.py</code>). <a href="./">Back to etymap →</a></p>
+
+<div id="tip" role="tooltip"></div>
+<script src="stats.js"></script>
+</body>
+</html>

@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How Etymap works · Oisín Nolan</title>
+<meta name="description" content="The algorithms behind Etymap: parsing Wiktionary into a graph, lowest common ancestors in a DAG, ghost-branch search and a static-site data layout.">
+<style>
+  :root {
+    --bg: #fcfcfa; --text: #1c1c1c; --muted: #6b6b6b; --line: #e6e4df; --accent: #2f5bd3; --code-bg: #f2f1ed;
+    --en: #2f5bd3; --nl: #d0611c; --sh: #3d3a35; --gold: #b8860b;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --serif: "Iowan Old Style", "Charter", "Palatino Linotype", Georgia, serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #121212; --text: #e8e6e3; --muted: #9a9894; --line: #2a2a2a; --accent: #8fb0ff; --code-bg: #1d1d1d;
+      --en: #8fb0ff; --nl: #ff9d5c; --sh: #d9d4ca; --gold: #e6be5a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #121212; --text: #e8e6e3; --muted: #9a9894; --line: #2a2a2a; --accent: #8fb0ff; --code-bg: #1d1d1d;
+    --en: #8fb0ff; --nl: #ff9d5c; --sh: #d9d4ca; --gold: #e6be5a;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0 auto; max-width: 42rem; padding: 3rem 1.25rem 5rem; background: var(--bg); color: var(--text);
+         font: 17px/1.65 var(--sans); -webkit-font-smoothing: antialiased; }
+  a { color: inherit; text-decoration-color: var(--line); text-underline-offset: 0.2em; }
+  a:hover { color: var(--accent); text-decoration-color: currentColor; }
+  .top { display: flex; justify-content: space-between; margin-bottom: 3rem; font-size: 0.9rem; }
+  .top a { color: var(--muted); text-decoration: none; }
+  .top a:hover { color: var(--text); }
+  h1 { font-size: 1.9rem; line-height: 1.25; letter-spacing: -0.015em; margin: 0 0 0.5rem; }
+  h2 { font-size: 1.25rem; letter-spacing: -0.01em; margin: 2.6rem 0 0.6rem; }
+  .meta { color: var(--muted); font-size: 0.95rem; margin: 0 0 2rem; }
+  .prose { font-family: var(--serif); font-size: 1.1rem; line-height: 1.7; }
+  .prose h2 { font-family: var(--sans); }
+  .prose p, .prose ul, .prose ol { margin: 0 0 1.15rem; }
+  .prose li { margin: 0.3rem 0; }
+  code { font-family: var(--mono); font-size: 0.82em; background: var(--code-bg); padding: 0.1em 0.3em; border-radius: 3px; }
+  pre { background: var(--code-bg); padding: 0.9rem 1rem; border-radius: 6px; overflow-x: auto; font-size: 0.95rem; line-height: 1.5; }
+  pre code { background: none; padding: 0; }
+  .math { font-family: var(--serif); font-style: italic; white-space: nowrap; }
+  figure { margin: 1.8rem 0; }
+  figure svg { width: 100%; height: auto; display: block; }
+  figcaption { font: 0.85rem/1.5 var(--sans); color: var(--muted); margin-top: 0.5rem; }
+  svg text { font-family: var(--serif); font-size: 13px; fill: var(--text); }
+  svg .lg { font-family: var(--sans); font-size: 10px; fill: var(--muted); }
+  svg .e { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+  svg .e.en { stroke: var(--en); } svg .e.nl { stroke: var(--nl); } svg .e.sh { stroke: var(--sh); }
+  svg .e.ghost { stroke-dasharray: 0.1 5; stroke-linecap: round; stroke-width: 2.4; }
+  svg .e.bad { stroke: #c0392b; stroke-dasharray: 4 3; }
+  svg .n { stroke: var(--bg); stroke-width: 1.5; }
+  svg .n.en { fill: var(--en); } svg .n.nl { fill: var(--nl); } svg .n.sh { fill: var(--sh); } svg .n.lca { fill: var(--gold); }
+  svg .ring { fill: none; stroke: var(--gold); stroke-width: 2; }
+  svg .x { fill: #c0392b; font-family: var(--sans); font-size: 12px; }
+  .callout { border-left: 2px solid var(--line); padding-left: 1rem; color: var(--muted); }
+  .foot { margin-top: 3.5rem; padding-top: 1.2rem; border-top: 1px solid var(--line); font-size: 0.85rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<nav class="top"><a href="./">← back to etymap</a><a href="stats.html">etymap in numbers</a></nav>
+
+<h1>How etymap works</h1>
+<p class="meta">Some graph theory, some text parsing, and a few tricks to fit it all on a static website.</p>
+
+<div class="prose">
+
+<p>When you type <em>take</em>, the page looks up its Dutch translation, <em>nemen</em>, and then has to answer a
+question that sounds simple: <em>where do these two words meet?</em> To answer it, the build turns a dictionary
+into a graph, asks a lowest-common-ancestor question on that graph, and then searches it for
+"ghost" relatives. Everything is computed ahead of time, so your browser only downloads a few small files.</p>
+
+<h2>1. Building the graph</h2>
+
+<p>English Wiktionary writes etymologies as prose, but the prose is built from structured templates. The entry for
+Dutch <em>nemen</em> reads "From Middle Dutch <em>nēmen</em>, from Old Dutch <em>neman</em>, from
+Proto-West Germanic <em>*neman</em>…", and underneath it looks like this:</p>
+
+<pre><code>{{inh|nl|dum|nēmen}}, from {{inh|nl|odt|neman}}, from {{inh|nl|gmw-pro|*neman}} …</code></pre>
+
+<p><code>inh</code> means <em>inherited</em> (the word passed down within a language family), <code>bor</code> means
+<em>borrowed</em>, <code>der</code> means <em>derived</em>, and so on. The
+<a href="https://github.com/tatuylonen/wiktextract">Wiktextract</a> project parses all of Wiktionary into JSON. The
+build streams the full dump (about 11 million entries in a 3 GB file) and keeps entries in around 50 relevant
+languages.</p>
+
+<p>Each word becomes a <strong>node</strong> keyed by <code>language|normalised form</code> (macrons are stripped
+except in reconstructions, to match how Wiktionary names its pages). Each template becomes a directed
+<strong>edge</strong> <em>child → parent</em>. Two details make this harder than it looks:</p>
+
+<ul>
+  <li><strong>Where does a chain stop?</strong> Every template on the <em>nemen</em> page says "<em>nemen</em> comes
+  from X", not "the previous word comes from X". So the parser links consecutive templates only when the text between them
+  ends in a connective such as "from" or "via". Text like "Compare", "Cognate with" or "Alternatively" breaks the
+  chain. Otherwise <em>take</em>'s "…from Old Norse <em>taka</em>. Alternatively, from Proto-West
+  Germanic <em>*takan</em>" would turn into a single nonsense chain.</li>
+  <li><strong>Trust tiers.</strong> A word's own page is the best evidence about its parent. Next best are the
+  <em>descendants trees</em> on ancestor pages: the Proto-Germanic page for <em>*nemaną</em> lists every known
+  daughter form, including Old English <em>niman</em>, whose line no modern dictionary page would mention. The
+  weakest evidence is a link inferred from the middle of someone else's chain. When choosing a parent, the build
+  takes the best tier available, and within a tier it prefers inherited over borrowed over derived.</li>
+</ul>
+
+<p>The result is about 1.8 million nodes and 2.9 million edges.</p>
+
+<h2>2. Tracing a word's ancestors</h2>
+
+<p>Starting from a word, the build walks parent edges breadth-first. Most of the time this gives a simple chain:
+<em>water</em> ← Middle English <em>water</em> ← Old English <em>wæter</em> ← Proto-West Germanic
+<em>*watar</em> ← … But compounds have several parents (Dutch <em>tijdperk</em> is <em>tijd</em> + <em>perk</em>),
+so the ancestry is a <strong>directed acyclic graph</strong>. Affixes (<em>-je</em>, <em>be-</em>, <em>*-aną</em>)
+are drawn but never followed. If they were, almost any two verbs would "share an ancestor" in the Proto-Germanic
+infinitive ending. Each DAG is capped at 32 nodes, which breadth-first order makes a graceful limit: the nodes
+that get cut are the most distant ones.</p>
+
+<h2>3. Finding the common ancestor</h2>
+
+<p>Write <span class="math">A(x)</span> for the set of ancestors of <span class="math">x</span> (including
+<span class="math">x</span> itself). The common ancestors of an English word <span class="math">e</span> and a
+Dutch word <span class="math">d</span> are <span class="math">C = A(e) ∩ A(d)</span>. Ancestry is a partial
+order, and the <strong>lowest common ancestors</strong> are the <em>minimal elements</em> of
+<span class="math">C</span>: the common ancestors that have no other common ancestor below them.</p>
+
+<figure>
+<svg viewBox="0 0 640 230" role="img" aria-label="English water and Dutch water meet at Proto-West Germanic *watar">
+  <path class="e sh" d="M320 28 L320 82"/>
+  <path class="e en" d="M320 92 C 280 110, 200 120, 170 150"/>
+  <path class="e nl" d="M320 92 C 360 110, 440 120, 470 150"/>
+  <path class="e en" d="M170 150 L170 205"/><path class="e nl" d="M470 150 L470 205"/>
+  <circle class="n sh" cx="320" cy="22" r="6"/><text x="332" y="26">*watōr</text><text class="lg" x="332" y="40">Proto-Germanic</text>
+  <circle class="ring" cx="320" cy="88" r="10"/><circle class="n lca" cx="320" cy="88" r="6"/>
+  <text x="336" y="86">*watar</text><text class="lg" x="336" y="100">Proto-West Germanic · LCA</text>
+  <circle class="n en" cx="170" cy="150" r="6"/><text x="160" y="154" text-anchor="end">wæter</text><text class="lg" x="160" y="167" text-anchor="end">Old English</text>
+  <circle class="n nl" cx="470" cy="150" r="6"/><text x="480" y="154">watar</text><text class="lg" x="480" y="167">Old Dutch</text>
+  <circle class="n en" cx="170" cy="208" r="6"/><text x="160" y="212" text-anchor="end">water</text><text class="lg" x="160" y="225" text-anchor="end">English</text>
+  <circle class="n nl" cx="470" cy="208" r="6"/><text x="480" y="212">water</text><text class="lg" x="480" y="225">Dutch</text>
+</svg>
+<figcaption>Every node above <em>*watar</em> is also a common ancestor, but only <em>*watar</em> is minimal, so it is the LCA. (Middle English and Middle Dutch are left out to keep the picture small.)</figcaption>
+</figure>
+
+<p>In a <em>tree</em> the LCA is unique, and classic algorithms answer LCA queries in constant time after linear
+preprocessing. In a <em>DAG</em> there can be several minimal common ancestors: a compound and its translation
+might share two roots that are unrelated to each other. The general problem is much harder. Bender et al.,
+<a href="https://doi.org/10.1016/j.jalgor.2005.08.001">"Lowest common ancestors in trees and directed acyclic
+graphs"</a> (2005), relate the all-pairs version to fast matrix multiplication. Here each DAG has a median of 12
+nodes, so the direct method works fine: compute <span class="math">C</span>, then drop every element that is an
+ancestor of another element of <span class="math">C</span>. The survivors are ranked by combined distance to the
+two words.</p>
+
+<p>Two special cases fall out of this for free:</p>
+<ul>
+  <li><strong>Loanwords.</strong> If the LCA is one of the two words itself, one word was borrowed from the other.
+  English <em>yacht</em> descends from Dutch <em>jacht</em>, so the LCA of (<em>yacht</em>, <em>jacht</em>) is
+  <em>jacht</em>.</li>
+  <li><strong>Different routes.</strong> <em>table</em> and <em>tafel</em> share the LCA Latin <em>tabula</em>,
+  but one path runs through Old French and the other through an early Germanic borrowing. When any edge on
+  either path is a borrowing, the summary says "by different routes".</li>
+</ul>
+
+<p class="callout">A judgement call: Wiktionary sometimes has several unrelated words with the same spelling
+("Etymology 1", "Etymology 2"). When a translation doesn't say which one it means, the build tries each
+combination and keeps the one that connects. That biases things slightly towards finding a relation.</p>
+
+<h2>4. Finding hidden relatives</h2>
+
+<p>Often there is no common ancestor: <em>take</em> came from Old Norse, while <em>nemen</em> is native
+Germanic. But Proto-West Germanic <em>*neman</em>, an ancestor of <em>nemen</em>, <em>also</em> had an English
+line: Old English <em>niman</em> → Middle English <em>nimen</em> → English <em>nim</em> (archaic: "to steal")
+and, surprisingly, <em>numb</em> (originally "taken", as in "seized by cold").</p>
+
+<p>Finding these means reversing the edges. For each ancestor of the Dutch word, from nearest to most distant,
+the build runs a <strong>depth-first search downwards</strong> through the children index. The search may only
+enter nodes in the other language's line (Old English, Middle English, English, Scots, plus Proto-West Germanic
+as a stepping stone). It stops at the first modern English word, so <em>numb</em> appears but <em>numbness</em>
+doesn't, and it stops at the first ancestor that turns up anything. A branch that never reaches modern English is
+marked † (died out).</p>
+
+<figure>
+<svg viewBox="0 0 640 250" role="img" aria-label="From *neman, the Dutch line continues to nemen; a dotted English branch leads to numb and nim">
+  <path class="e nl" d="M320 30 C 360 60, 440 70, 470 100"/><path class="e nl" d="M470 100 L470 160"/><path class="e nl" d="M470 160 L470 220"/>
+  <path class="e en ghost" d="M320 30 C 280 60, 200 70, 170 100"/><path class="e en ghost" d="M170 100 L170 160"/>
+  <path class="e en ghost" d="M170 160 C 160 190, 120 200, 110 220"/><path class="e en ghost" d="M170 160 C 180 190, 220 200, 230 220"/>
+  <circle class="n nl" cx="320" cy="28" r="6"/><text x="332" y="26">*neman</text><text class="lg" x="332" y="40">Proto-West Germanic</text>
+  <circle class="n nl" cx="470" cy="100" r="6"/><text x="482" y="104">neman</text><text class="lg" x="482" y="117">Old Dutch</text>
+  <circle class="n nl" cx="470" cy="160" r="6"/><text x="482" y="164">nēmen</text><text class="lg" x="482" y="177">Middle Dutch</text>
+  <circle class="n nl" cx="470" cy="220" r="6"/><text x="482" y="224">nemen</text><text class="lg" x="482" y="237">Dutch</text>
+  <circle class="n en" cx="170" cy="100" r="4"/><text x="160" y="104" text-anchor="end">niman</text><text class="lg" x="160" y="117" text-anchor="end">Old English</text>
+  <circle class="n en" cx="170" cy="160" r="4"/><text x="160" y="164" text-anchor="end">nimen</text><text class="lg" x="160" y="177" text-anchor="end">Middle English</text>
+  <circle class="n en" cx="110" cy="220" r="4"/><text x="100" y="224" text-anchor="end">numb</text>
+  <circle class="n en" cx="230" cy="220" r="4"/><text x="242" y="224">nim</text>
+</svg>
+<figcaption>The ghost search starts at each ancestor of <em>nemen</em> and looks downwards for English-line descendants (dotted).</figcaption>
+</figure>
+
+<p>The graph has a trap. Nodes are keyed by spelling, so <strong>homographs merge</strong>. For <em>egg</em>, the
+search correctly finds Old English <em>ǣġ</em> → Middle English <em>ey</em> (the native word that Norse
+<em>egg</em> replaced). But Middle English <em>ey</em>/<em>ay</em> is also a spelling of other words, and an
+unrestricted search walks straight into English <em>hay</em>, <em>eye</em> and <em>any</em>. The fix uses the fact
+that each descendants tree on Wiktionary is internally consistent, because one editor wrote it about one word.
+Every tree edge remembers which page's tree it came from, and the search first tries to stay
+<em>inside the tree of the ancestor it started from</em>. Only if that finds nothing does it fall back to the
+whole graph. The search then gives <em>ey</em> and, delightfully, <em>cockney</em>: a "cock's egg".</p>
+
+<p>Results are ranked so that modern words beat dead ends, common words (ones with translation tables) beat rare
+ones, and links stated on a word's own page beat inferred ones.</p>
+
+<h2>5. Storing the data</h2>
+
+<p>There is no server, so everything is precomputed. The build resolves around 95,000 English–Dutch pairs in under a
+minute, and the browser fetches only what it needs:</p>
+
+<ul>
+  <li><strong>Autocomplete</strong> downloads a sorted list of headwords once (about 200 kB compressed) and
+  <strong>binary-searches</strong> it for your prefix on every keystroke.</li>
+  <li><strong>Words</strong> and <strong>pairs</strong> are both stored in <strong>hash buckets</strong>: a word
+  lives in file <span class="math">CRC32(word) mod 256</span>, and a resolved pair in
+  <span class="math">CRC32(pair id) mod 2048</span>. The browser computes the same hash, so it knows which file to fetch
+  without needing an index. Each lookup costs two small requests of roughly 50–120 kB. Inflected forms are stored as
+  redirects (<em>took</em> → <em>take</em>).</li>
+  <li>A pair is shared by both directions (<em>take → nemen</em> and <em>nemen → take</em> are the same pair), so it is
+  stored once.</li>
+</ul>
+
+<h2>6. The timeline, family tree and map labels</h2>
+
+<p><strong>The timeline</strong> has to span from about 4500 BCE (Proto-Indo-European) to today without squashing
+the medieval period, where most of the action happens. It uses a logarithmic scale anchored at the present:</p>
+
+<p style="text-align:center"><span class="math">u(y) = 1 − ln(1 + (2026 − y)/500) / ln(1 + (2026 − y<sub>min</sub>)/500)</span></p>
+
+<p>Near the present this is roughly linear, and further back it compresses logarithmically. The constant 500 sets
+where that switch happens. Each word appears when its language stage begins, nudged so that a child never appears
+before its parent. Arcs grow along a quadratic Bézier curve, cut at fraction <span class="math">t</span> using
+<strong>de Casteljau's algorithm</strong>: interpolate twice and you get the control points of the partial
+curve.</p>
+
+<p><strong>The family tree</strong> in the side panel uses the same time scale vertically, so scrubbing the
+timeline moves a "now" line down the tree. Its one adjustment is a monotone warp: if two words are closer in time
+than a label is tall, everything below is pushed down a little. The mapping stays strictly increasing, so it can be
+inverted, and you can drag on the tree to scrub.</p>
+
+<p><strong>Labels.</strong> Placing map labels so that none overlap is NP-hard in general (it is the classic
+point-feature label placement problem). The page uses a simple greedy approximation. Labels are sorted by
+importance (the two words, then the common ancestor, then the form at the current moment, then everything else).
+Each is tried in four positions around its dot (the "four-position model"), and skipped if they all collide. Hover
+any dot to see a skipped label.</p>
+
+<h2>Caveats</h2>
+<ul>
+  <li>Dates are the rough lifetime of a <em>language stage</em>, not when the word was first written down.</li>
+  <li>Places are approximate home regions, not migration routes. Reconstructed languages are drawn as large, faint
+  circles, and the location of the Proto-Indo-European homeland is debated.</li>
+  <li>Wiktionary is excellent but uneven, and the chain-parsing heuristics sometimes misfire. Every step links back to
+  its Wiktionary entry so you can check.</li>
+</ul>
+
+</div>
+
+<p class="foot">Data: English Wiktionary via Wiktextract / kaikki.org, CC BY-SA 4.0. Basemap: Natural Earth.
+Built by Oisín Nolan. <a href="./">Back to etymap →</a></p>
+</body>
+</html>

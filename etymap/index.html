@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Etymap · Oisín Nolan</title>
+<meta name="description" content="Type an English or Dutch word and trace it and its translation back through time and across Europe to their common ancestor.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="bar">
+  <a class="home" href="../">Oisín Nolan</a>
+  <h1 class="brand">etymap</h1>
+  <form class="search" id="search" role="search" autocomplete="off">
+    <button type="button" class="dir" id="dir" aria-label="Switch translation direction">
+      <span data-from>EN</span><span class="arrow" aria-hidden="true">→</span><span data-to>NL</span>
+    </button>
+    <div class="field">
+      <input id="q" type="search" placeholder="Type an English word…" aria-label="Word" spellcheck="false"
+             aria-autocomplete="list" aria-controls="suggest" aria-expanded="false">
+      <ul id="suggest" role="listbox" hidden></ul>
+    </div>
+  </form>
+  <a class="help" href="stats.html" title="Etymap in numbers" aria-label="Etymap in numbers">
+    <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M3 13.5V8M8 13.5V3M13 13.5V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+  </a>
+  <a class="help" href="how.html" title="How does this work?" aria-label="How does this work?">?</a>
+</header>
+
+<main class="app" id="app">
+  <section class="head" id="head" aria-live="polite">
+    <div class="intro">
+      <p class="lede">Type a word. Etymap finds its translation, then follows both words back through
+        their ancestors, across time and across the map, until they meet.</p>
+      <p class="try">Try:
+        <a href="#en/water">water</a> · <a href="#en/take">take</a> · <a href="#en/dog">dog</a> ·
+        <a href="#en/egg">egg</a> · <a href="#en/sky">sky</a> · <a href="#en/yacht">yacht</a> ·
+        <a href="#en/table">table</a> · <a href="#nl/hert">hert</a> · <a href="#nl/tijd">tijd</a></p>
+    </div>
+  </section>
+
+  <section class="stage" aria-label="Map">
+    <svg id="map" role="img" aria-label="Map of Europe showing where each ancestor form was spoken"></svg>
+    <div class="legend" id="legend" aria-hidden="true">
+      <div><i class="sw en"></i>English line</div>
+      <div><i class="sw nl"></i>Dutch line</div>
+      <div><i class="sw sh"></i>shared ancestor</div>
+      <div class="styles">
+        <span><svg width="26" height="6"><line x1="1" y1="3" x2="25" y2="3" class="ls inh"/></svg>inherited</span>
+        <span><svg width="26" height="6"><line x1="1" y1="3" x2="25" y2="3" class="ls bor"/></svg>borrowed</span>
+        <span><svg width="26" height="6"><line x1="1" y1="3" x2="25" y2="3" class="ls der"/></svg>derived</span>
+        <span><svg width="26" height="6"><line x1="1" y1="3" x2="25" y2="3" class="ls ghost"/></svg>relative</span>
+      </div>
+    </div>
+    <div class="unmapped" id="unmapped" hidden></div>
+    <div class="zoomctl" role="toolbar" aria-label="Map zoom">
+      <button type="button" id="zin" aria-label="Zoom in" title="Zoom in">+</button>
+      <button type="button" id="zout" aria-label="Zoom out" title="Zoom out">−</button>
+      <button type="button" id="zfit" aria-label="Show everything" title="Show everything">
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+      </button>
+    </div>
+    <div class="maphint" id="maphint" aria-hidden="true">scroll or pinch to zoom · drag to pan</div>
+  </section>
+
+  <section class="timeline" aria-label="Timeline">
+    <button type="button" id="play" class="play" aria-label="Play">
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path id="playicon" d="M4 2.5v11l9-5.5z"/></svg>
+    </button>
+    <div class="track">
+      <input type="range" id="scrub" min="0" max="1000" value="1000" step="1" aria-label="Year">
+      <svg id="ticks" aria-hidden="true"></svg>
+    </div>
+    <output id="year" class="year" for="scrub">today</output>
+  </section>
+
+  <aside class="panel" id="panel" aria-label="Word histories"></aside>
+</main>
+
+<footer class="foot">
+  <p>Etymological data derived from <a href="https://en.wiktionary.org/">English Wiktionary</a> via
+    <a href="https://github.com/tatuylonen/wiktextract">Wiktextract</a> / <a href="https://kaikki.org/">kaikki.org</a>,
+    <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>, restructured
+    (<a href="DATA_LICENSE.md">data licence</a>). Basemap: <a href="https://www.naturalearthdata.com/">Natural Earth</a>.
+    Not affiliated with Wikimedia.</p>
+  <p class="how">How to read this: dates are the rough lifetime of each <em>language stage</em>, not the
+    first record of the word. Places are approximate home regions, not migration routes. Forms marked * are
+    reconstructed, and ? marks a link Wiktionary calls uncertain. <a href="how.html">More on how it works →</a></p>
+</footer>
+
+<script src="lib/d3.min.js"></script>
+<script src="lib/topojson-client.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
