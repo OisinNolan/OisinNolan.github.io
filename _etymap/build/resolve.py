@@ -50,6 +50,7 @@ class Graph:
         self.forms = {"en": {}, "nl": {}}  # form -> lemma
         self.strength = {}                 # (child, parent) -> 0 own page, 1 descendants/chain
         self.common = set()                # keys of headwords with translations (≈ common words)
+        self.page_says = defaultdict(set)  # (page, child) -> parents that page gives for child
 
     def load(self):
         print("loading edges…", flush=True)
@@ -63,6 +64,8 @@ class Graph:
                 if not p or c == p:
                     continue
                 self.parents[c].append((p, e["t"], e["s"], ety_int(e.get("ce")), e.get("src"), e.get("u", False), e.get("ax", False)))
+                if e.get("src"):
+                    self.page_says[(e["src"], c)].add(p)
                 self.children[p].append((c, e["t"], e["s"], e.get("r")))
                 st = 0 if e["s"] == "s" else 1
                 if st < self.strength.get((c, p), 9):
@@ -201,6 +204,17 @@ class Graph:
             if not branches:
                 dfs(n, [], 0, None)
             branches = [b for b in branches if not any(k in other_dag for k in b)]
+            # Homograph guard: if the final word's own page names a different parent for a step on the
+            # branch, the branch went through a same-spelled but different word. E.g. ME kyken "peep"
+            # (from Middle Dutch, -> keek) vs ME kyken "kick" (from Norse): kick's page says kyken <- kikna.
+            def consistent(b):
+                leaf, steps = b[-1], [n] + b
+                for par, child in zip(steps, steps[1:]):
+                    said = self.page_says.get((leaf, child))
+                    if said and par not in said:
+                        return False
+                return True
+            branches = [b for b in branches if consistent(b)]
             if branches:
                 def rank(b):
                     leaf = b[-1]

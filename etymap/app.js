@@ -63,7 +63,7 @@ async function lookupWord(lang, word) {
   const tryOne = async (w) => {
     let sh;
     try { sh = await getJSON(`${DATA}/${lang}/${bucketOf(w, W_BUCKETS)}.json`); } catch { return null; }
-    if (sh.words[w]) return { word: w, cands: sh.words[w] };
+    if (sh.words[w]) return { word: w, cands: sh.words[w], also: sh.also?.[w] };
     if (sh.forms[w]) {
       const lemma = sh.forms[w];
       const r = await tryOne(lemma);
@@ -941,6 +941,15 @@ function renderHead(state, res) {
     el("span", { class: "to" }, "→"),
     el("span", { class: `w ${OTHER[dir]}` }, c[0])));
   if (res.from) head.append(el("p", { class: "note" }, `Showing ${res.word} (you typed ${res.from}).`));
+  if (res.also) {
+    // the word is a headword in its own right *and* an inflected form of another word (kijk / kijken)
+    const noEty = !model || (model.pair.A[dir] || []).length <= 1;
+    const go = el("a", { href: `#${dir}/${encodeURIComponent(res.also)}` }, `Show ${res.also} instead →`);
+    head.append(el("p", { class: `formhint${noEty ? " strong" : ""}` },
+      noEty ? [`Wiktionary has no etymology for `, el("em", {}, res.word), `, but `, el("em", {}, res.word),
+               ` is also a form of `, el("em", {}, res.also), `, which may be more informative. `, go]
+            : [el("em", {}, res.word), ` is also a form of `, el("em", {}, res.also), `. `, go]));
+  }
   if (cands.length > 1) {
     const chips = el("div", { class: "chips", role: "group", "aria-label": "Other translations" });
     cands.forEach((cc, i) => chips.append(el("button", {

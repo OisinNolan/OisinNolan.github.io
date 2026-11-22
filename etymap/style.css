@@ -115,6 +115,11 @@ button { font: inherit; color: inherit; }
 .chip[disabled] { opacity: 0.45; cursor: default; }
 .chip:not([disabled]):hover { border-color: var(--muted); }
 .head > .note:not(:first-of-type) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.formhint { margin: 0.35rem 0 0; font-size: 0.88rem; color: var(--muted); }
+.formhint em { font-family: var(--serif); color: var(--text); }
+.formhint a { color: var(--accent); text-decoration-color: currentColor; white-space: nowrap; }
+.formhint.strong { color: var(--text); background: color-mix(in srgb, var(--accent) 9%, transparent);
+  border-left: 3px solid var(--accent); padding: 0.35rem 0.7rem; border-radius: 0 6px 6px 0; max-width: 46rem; }
 .summary { margin: 0.4rem 0 0; font: 1.05rem/1.5 var(--serif); max-width: 46rem; }
 .summary em { font-style: italic; }
 .note { color: var(--muted); font-size: 0.85rem; margin: 0.25rem 0 0; }

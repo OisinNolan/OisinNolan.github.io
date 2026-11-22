@@ -3,7 +3,7 @@
     python build/shard.py
 
 data/index-en.json, data/index-nl.json   headword lists for autocomplete
-data/en/<b>.json, data/nl/<b>.json       {"words", "forms"}, b = crc32(word) % W_BUCKETS (3 hex digits)
+data/en/<b>.json, data/nl/<b>.json       {"words", "forms", "also"?}, b = crc32(word) % W_BUCKETS (3 hex digits)
 data/p/<b>.json                          {"pairs", "nodes"}, b = crc32(pairId) % N_BUCKETS
 data/langs.json                          language table (+ names for unmapped codes)
 """
@@ -67,8 +67,12 @@ def main():
         forms = orjson.loads((OUT / f"forms_{lang}.json").read_bytes())
         words = set(index)
         for form, lemma in forms.items():
-            if form not in words and lemma in words:
-                shards[bucket(form, W_BUCKETS)]["forms"][form] = lemma
+            if lemma not in words or form == lemma:
+                continue
+            if form not in words:
+                shards[bucket(form, W_BUCKETS)]["forms"][form] = lemma        # took -> take
+            else:
+                shards[bucket(form, W_BUCKETS)].setdefault("also", {})[form] = lemma   # kijk: a noun, and a form of kijken
 
         (DATA / lang).mkdir(parents=True, exist_ok=True)
         for p, sh in shards.items():
