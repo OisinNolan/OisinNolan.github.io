@@ -20,6 +20,7 @@ MAX_DEPTH = 16
 MAX_NODES = 32
 MAX_CANDIDATES = 8
 MAX_RESOLVED = 4
+FORM_LANGS = {"la", "grc"}
 
 
 def ety_int(v):
@@ -51,6 +52,7 @@ class Graph:
         self.strength = {}                 # (child, parent) -> 0 own page, 1 descendants/chain
         self.common = set()                # keys of headwords with translations (≈ common words)
         self.page_says = defaultdict(set)  # (page, child) -> parents that page gives for child
+        self.formof = {}                   # Latin/Greek form -> its lemma (subiectum -> subiciō)
 
     def load(self):
         print("loading edges…", flush=True)
@@ -83,6 +85,10 @@ class Graph:
                 if "fo" in n:
                     if l in self.forms and n["fo"]:
                         self.forms[l].setdefault(n["w"], n["fo"][0])
+                    elif l in FORM_LANGS and n["fo"] and key(l, n["fo"][0]) != k:
+                        # participles are often the source (subject <- subiectus, onderwerp <- calque of
+                        # subiectum); both are forms of subiciō, which is where they meet
+                        self.formof.setdefault(k, key(l, n["fo"][0]))
                     continue
                 self.etys[k].add(ety_int(n["e"]) or 0)
                 cur = self.nodes.get(k)
@@ -135,6 +141,9 @@ class Graph:
                 continue
             ps = self.best_parents(n, e, start)
             ps = [x for x in ps if any(ch.isalpha() for ch in x[0].split("|", 1)[1])]
+            lemma = self.formof.get(n)
+            if lemma and lemma not in dag and not any(x[0] == lemma for x in ps):
+                ps.append((lemma, "der", False, False))
             dag[n]["p"] = ps
             for p, t, u, ax in ps:
                 if not any(ch.isalpha() for ch in p.split("|", 1)[1]):

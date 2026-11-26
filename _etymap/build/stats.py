@@ -29,6 +29,8 @@ FAMILIES = [
 # Known-wrong cousins caused by homographs that share a Wiktionary page (OE god "god" / gōd "good").
 # The proper fix is per-etymology glosses in resolve.py; until then keep them out of the headline list.
 KNOWN_BAD_COUSINS = {("god", "goed"), ("god", "goei"), ("berg", "berry"), ("eekhoorn", "con")}
+SHOWCASE_NL = ["hond", "gast", "wiel", "dier", "vogel", "tand", "voet", "hart", "vader", "nieuw", "zout", "ster",
+               "naam", "nacht", "drie", "melk", "hoorn", "tuin"]
 STOP = set("a an the of to in on or and for with by as at from be is are any one some that this it its "
            "used especially often usually etc something someone person thing which who".split())
 
@@ -317,11 +319,75 @@ def main():
                                          for k in ("unknown", "uncertain", "competing", "no_data")}}
     stats["uncertainty"] = unc
 
+    # ---- cognate finder (cognates.py): every relative, not just translations ----
+    cog_nodes = orjson.loads((OUT / "cog_nodes.json").read_bytes())
+    cdisp = lambda k: (cog_nodes.get(k) or [k.split("|", 1)[1]])[0]
+    BAND = [("loan", "Borrowed directly"), ("west", "Proto-West Germanic"), ("gem", "Proto-Germanic"),
+            ("classical", "Latin, Greek or French"), ("pie", "Proto-Indo-European"), ("other", "Other")]
+
+    def band(row, k):
+        lca = row[3]
+        lc = lang_of(lca)
+        if lca == k or row[4] <= 1 or lc in ("en", "nl"):
+            return "loan"
+        return {"gmw-pro": "west", "gem-pro": "gem", "ine-pro": "pie"}.get(lc) or \
+            ("classical" if lc in {"la", "grc", "fro", "frm", "fr", "xno", "itc-pro", "gkm", "LL.", "ML."} else "other")
+
+    cog = {"bands": {}, "far": {}}
+    for side in ("en", "nl"):
+        other = "nl" if side == "en" else "en"
+        n = with_c = with_pie = 0
+        closest = Counter()
+        bex = defaultdict(list)
+        far = []
+        common = (lambda w: tr_count.get(w, 0)) if side == "en" else (lambda w: nl_common.get(w, 0))
+        ocommon = (lambda w: tr_count.get(w, 0)) if other == "en" else (lambda w: nl_common.get(w, 0) * 20)
+        with open(OUT / f"cog_{side}.jsonl", "rb") as f:
+            for line in f:
+                r = orjson.loads(line)
+                n += 1
+                if not r["c"]:
+                    continue
+                with_c += 1
+                k = r["k"]
+                b = band(r["c"][0], k)
+                closest[b] += 1
+                bex[b].append((common(r["w"]), r["w"], r["c"][0][0], cdisp(r["c"][0][3])))
+                pies = [c for c in r["c"] if lang_of(c[3]) == "ine-pro"]
+                if pies:
+                    with_pie += 1
+                    best = max(pies, key=lambda c: ocommon(c[0]))
+                    if lang_of(r["c"][0][3]) != "ine-pro" and plain.match(best[0]):
+                        far.append((common(r["w"]) + ocommon(best[0]), r["w"], r["c"][0][0], best[0], cdisp(best[3])))
+        # showcase: a hand-picked list of words whose distant relatives are well established
+        if side == "nl":
+            far = [x for x in far if x[1] in SHOWCASE_NL]
+            far.sort(key=lambda x: SHOWCASE_NL.index(x[1]))
+        else:
+            far.sort(reverse=True)
+        seen, far_out = set(), []
+        for _, w, near, c, via in far:
+            if (side == "en" and via in seen) or c.lower() == w.lower():
+                continue
+            seen.add(via)
+            far_out.append([w, near, c, via])
+            if len(far_out) >= 16:
+                break
+        cog["bands"][side] = {"words": n, "with": with_c, "with_pie": with_pie,
+                              "by": [{"band": b, "label": lab, "n": closest[b],
+                                      "examples": [x[1:] for x in sorted(bex[b], reverse=True)[:6]]} for b, lab in BAND]}
+        cog["far"][side] = far_out
+    stats["cognates"] = cog
+
     (SITE / "stats.json").write_bytes(orjson.dumps(stats))
     print(f"wrote {SITE / 'stats.json'} ({(SITE / 'stats.json').stat().st_size / 1e3:.0f} kB)")
     print(orjson.dumps({k: stats[k] for k in ("counts",)}).decode())
     for k in stats["kinds"]:
         print(f"  {k['kind']:15s} {k['n']:6d}  {k['examples'][:4]}")
+    for sd in ("en", "nl"):
+        B = stats["cognates"]["bands"][sd]
+        print(f"cognates {sd}: {B['with']}/{B['words']} pie {B['with_pie']}", [(x["band"], x["n"], x["examples"][:2]) for x in B["by"]])
+        print("   far:", stats["cognates"]["far"][sd][:6])
     print("LCA:", [(x["name"], x["n"]) for x in stats["lca"][:10]])
     for s in ("en", "nl"):
         print(f"fingerprint {s}:", [(x["family"], x["n"]) for x in stats["fingerprint"][s]])

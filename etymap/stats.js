@@ -63,6 +63,36 @@ function render(S) {
     el("div", { class: "tile" }, el("div", { class: "v" }, pctStr(pct(related, withData))),
       el("div", { class: "l" }, "of English words share an ancestor with their Dutch translation, where both histories are known")));
 
+  /* 0. cognate finder */
+  if (S.cognates) {
+    const C = S.cognates.bands;
+    $("#cogtiles").append(
+      el("div", { class: "tile" }, el("div", { class: "v" }, pctStr(pct(C.nl.with, C.nl.words))), el("div", { class: "l" }, `of ${fmt(C.nl.words)} Dutch words have at least one English relative`)),
+      el("div", { class: "tile" }, el("div", { class: "v" }, pctStr(pct(C.en.with, C.en.words))), el("div", { class: "l" }, `of ${fmt(C.en.words)} English words have at least one Dutch relative`)),
+      el("div", { class: "tile" }, el("div", { class: "v" }, pctStr(pct(C.nl.with_pie, C.nl.with))), el("div", { class: "l" }, "of Dutch words with a relative also have a distant one, through Proto-Indo-European")));
+    const BLAB = { loan: ["Borrowed directly", "one language took the word from the other"],
+      west: ["Proto-West Germanic", "c. 200 BCE – 500 CE"], gem: ["Proto-Germanic", "c. 500 BCE – 200 CE"],
+      classical: ["Latin, Greek or French", "both borrowed from the same source"], pie: ["Proto-Indo-European", "c. 4500–2500 BCE"],
+      other: ["Elsewhere", "other languages"] };
+    for (const side of ["nl", "en"]) {
+      const B = C[side], other = side === "nl" ? "en" : "nl";
+      const box = el("div", {}, el("h3", {}, el("i", { class: `k ${side}` }), `${NAME[side]} words`));
+      const m = Math.max(...B.by.map((x) => x.n));
+      for (const x of B.by) {
+        const [label, sub] = BLAB[x.band];
+        box.append(barRow({ label, sub, n: x.n, total: B.with, max: m, cls: x.band === "pie" || x.band === "west" || x.band === "gem" ? "" : "alt",
+          examples: exList(x.examples.slice(0, 3).map(([w, c]) => el("span", {}, link(side, w, c), " ~ ", el("span", { class: "w" }, c)))) }));
+      }
+      $("#cogbands").append(box);
+    }
+    const tb = $("#far tbody");
+    for (const [w, near, far, via] of S.cognates.far.nl.slice(0, 12)) {
+      const to = (c) => el("a", { class: "w", href: `./#nl/${encodeURIComponent(w)}/${encodeURIComponent(c)}` }, c);
+      tb.append(el("tr", {}, el("td", {}, link("nl", w)), el("td", {}, to(near)), el("td", {}, to(far)),
+        el("td", {}, el("span", { class: "w" }, via))));
+    }
+  }
+
   /* 1. kinds */
   const KIND = {
     cognate: ["Cognates", "both inherited from a shared ancestor"],

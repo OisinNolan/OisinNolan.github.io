@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Etymap · Oisín Nolan</title>
-<meta name="description" content="Type an English or Dutch word and trace it and its translation back through time and across Europe to their common ancestor.">
+<meta name="description" content="Type a Dutch or English word and find its relatives in the other language, close or distant, traced back through time and across Europe to their common ancestor.">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -12,11 +12,12 @@
   <a class="home" href="../">Oisín Nolan</a>
   <h1 class="brand">etymap</h1>
   <form class="search" id="search" role="search" autocomplete="off">
-    <button type="button" class="dir" id="dir" aria-label="Switch translation direction">
-      <span data-from>EN</span><span class="arrow" aria-hidden="true">→</span><span data-to>NL</span>
-    </button>
+    <div class="langsw" id="lang" role="group" aria-label="Language you type in">
+      <button type="button" class="nl" data-lang="nl" aria-pressed="true" title="Type a Dutch word">NL</button>
+      <button type="button" class="en" data-lang="en" aria-pressed="false" title="Type an English word">EN</button>
+    </div>
     <div class="field">
-      <input id="q" type="search" placeholder="Type an English word…" aria-label="Word" spellcheck="false"
+      <input id="q" type="search" placeholder="Typ een Nederlands woord…" aria-label="Word" spellcheck="false"
              aria-autocomplete="list" aria-controls="suggest" aria-expanded="false">
       <ul id="suggest" role="listbox" hidden></ul>
     </div>
@@ -30,12 +31,15 @@
 <main class="app" id="app">
   <section class="head" id="head" aria-live="polite">
     <div class="intro">
-      <p class="lede">Type a word. Etymap finds its translation, then follows both words back through
-        their ancestors, across time and across the map, until they meet.</p>
+      <p class="lede">Type a Dutch or English word. Etymap finds its relatives in the other language, from
+        close cousins (<em>hond</em> and <em>hound</em>) to distant ones (<em>hond</em> and <em>canine</em>), and follows
+        both back through time and across the map to where they meet.</p>
       <p class="try">Try:
-        <a href="#en/water">water</a> · <a href="#en/take">take</a> · <a href="#en/dog">dog</a> ·
-        <a href="#en/egg">egg</a> · <a href="#en/sky">sky</a> · <a href="#en/yacht">yacht</a> ·
-        <a href="#en/table">table</a> · <a href="#nl/hert">hert</a> · <a href="#nl/tijd">tijd</a></p>
+        <a href="#nl/tuin">tuin</a> · <a href="#nl/gast">gast</a> · <a href="#nl/wiel">wiel</a> ·
+        <a href="#nl/kerel">kerel</a> · <a href="#nl/dier">dier</a> · <a href="#nl/vogel">vogel</a> ·
+        <a href="#nl/kaas">kaas</a> · <a href="#nl/zwaar">zwaar</a> · <a href="#nl/vrolijk">vrolijk</a> ·
+        <a href="#en/yacht">yacht</a></p>
+      <div class="picks" id="picks" aria-label="Interesting relatives"></div>
     </div>
   </section>
 
@@ -45,12 +49,6 @@
       <div><i class="sw en"></i>English line</div>
       <div><i class="sw nl"></i>Dutch line</div>
       <div><i class="sw sh"></i>shared ancestor</div>
-      <div class="styles">
-        <span><svg width="26" height="6"><line x1="1" y1="3" x2="25" y2="3" class="ls inh"/></svg>inherited</span>
-        <span><svg width="26" height="6"><line x1="1" y1="3" x2="25" y2="3" class="ls bor"/></svg>borrowed</span>
-        <span><svg width="26" height="6"><line x1="1" y1="3" x2="25" y2="3" class="ls der"/></svg>derived</span>
-        <span><svg width="26" height="6"><line x1="1" y1="3" x2="25" y2="3" class="ls ghost"/></svg>relative</span>
-      </div>
     </div>
     <div class="unmapped" id="unmapped" hidden></div>
     <div class="zoomctl" role="toolbar" aria-label="Map zoom">

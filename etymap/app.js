@@ -6,9 +6,51 @@
 const NOW = 2026;
 const K = 500;                       // timeline scale: u ~ log(1 + (NOW - year) / K)
 const EARLIEST = -4500;
-let N_BUCKETS = 2048, W_BUCKETS = 256;   // overwritten from data/meta.json
+let W_BUCKETS = 2048;   // overwritten from data/meta.json
 const OTHER = { en: "nl", nl: "en" };
 const NAME = { en: "English", nl: "Dutch" };
+const RELATION = { inh: "is inherited from", bor: "is borrowed from", der: "is derived from", cal: "is a calque of",
+  cmp: "is formed partly from", ghost: "is descended from" };
+const TYPE_NAME = { inh: "Inherited", bor: "Borrowed", der: "Derived", cal: "Calque", cmp: "Compound part", ghost: "Descended" };
+
+/* Hover card for a link in the tree or on the map: "English town · is inherited from · Middle English toun" */
+let pop = null;   // created on first use (this runs before the el() helper is defined)
+function linkPopShow(ev, childKey, parentKey, t, unc, viaKey) {
+  if (!pop) { pop = el("div", { class: "linkpop", role: "tooltip", hidden: true }); document.body.append(pop); }
+  const word = (k) => {
+    const it = model.info.get(k);
+    const n = it?.n || [k.split("|")[1], k.split("|")[0]];
+    const side = it ? (it.lca ? "lca" : it.side.replace("ghost-", "")) : "";
+    const gl = it ? treeGloss(it) : "";
+    return el("div", { class: "lp-w" }, el("span", { class: `lp-f ${side}` }, n[0]), " ",
+      el("span", { class: "lp-l" }, nodeLang(n).name), gl ? el("span", { class: "lp-g" }, ` ‘${gl}’`) : null);
+  };
+  const svgNS = "http://www.w3.org/2000/svg";
+  const sw = document.createElementNS(svgNS, "svg");
+  sw.setAttribute("width", "26"); sw.setAttribute("height", "8"); sw.setAttribute("aria-hidden", "true");
+  const ln = document.createElementNS(svgNS, "line");
+  for (const [k, v] of Object.entries({ x1: 2, y1: 4, x2: 24, y2: 4, class: `ls ${t}` })) ln.setAttribute(k, v);
+  sw.append(ln);
+  const via = viaKey && model.info.get(viaKey);
+  pop.replaceChildren(
+    el("div", { class: "lp-t" }, sw, TYPE_NAME[t] || "Link", unc ? el("span", { class: "lp-unc" }, "uncertain") : null),
+    word(childKey),
+    el("div", { class: "lp-v" }, RELATION[t] || "comes from"),
+    word(parentKey),
+    ...(via ? [el("div", { class: "lp-n" }, "via ", el("i", {}, via.n[0]), ` (${nodeLang(via.n).name}), which isn't on the map`)] : []));
+  pop.hidden = false;
+  linkPopMove(ev);
+}
+function linkPopMove(ev) {
+  if (!pop || pop.hidden) return;
+  const r = pop.getBoundingClientRect();
+  let x = ev.clientX + 16, y = ev.clientY + 14;
+  if (x + r.width > innerWidth - 8) x = ev.clientX - r.width - 16;
+  if (y + r.height > innerHeight - 8) y = ev.clientY - r.height - 14;
+  pop.style.left = `${Math.max(8, x)}px`;
+  pop.style.top = `${Math.max(8, y)}px`;
+}
+const linkPopHide = () => { if (pop) pop.hidden = true; };
 const EDGE_WORD = { inh: "inherited from", bor: "borrowed from", der: "derived from", cal: "calque of", cmp: "formed from" };
 const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -57,13 +99,13 @@ function crc32(str) {
   for (const b of new TextEncoder().encode(str)) c = CRC[(c ^ b) & 0xff] ^ (c >>> 8);
   return (c ^ 0xffffffff) >>> 0;
 }
-const bucketOf = (s, n = N_BUCKETS) => (crc32(s) % n).toString(16).padStart(3, "0");
+const bucketOf = (s, n = W_BUCKETS) => (crc32(s) % n).toString(16).padStart(3, "0");
 
 async function lookupWord(lang, word) {
   const tryOne = async (w) => {
     let sh;
     try { sh = await getJSON(`${DATA}/${lang}/${bucketOf(w, W_BUCKETS)}.json`); } catch { return null; }
-    if (sh.words[w]) return { word: w, cands: sh.words[w], also: sh.also?.[w] };
+    if (sh.words[w]) return { word: w, entry: sh.words[w], nodes: sh.nodes, also: sh.also?.[w] };
     if (sh.forms[w]) {
       const lemma = sh.forms[w];
       const r = await tryOne(lemma);
@@ -74,14 +116,46 @@ async function lookupWord(lang, word) {
   return (await tryOne(word)) || (word !== word.toLowerCase() ? await tryOne(word.toLowerCase()) : null);
 }
 
-async function getPair(pid) {
-  const b = await getJSON(`${DATA}/p/${bucketOf(pid)}.json`);
-  return { pair: b.pairs[pid], nodes: b.nodes };
+/* A pair is rebuilt from the two words' own ancestry DAGs (packed [key, depth, [[parent, type, unc, affix?]]]).
+   Cognate rows: [word, its etymology idx, my etymology idx, lca key, distance, same meaning, graft?];
+   a graft is a list of [child, parent, type] edges (lowest first) that joins the relative's DAG to the
+   shared ancestor through a descendants tree (wheel -> Old English hwēol -> *hwehwlą). */
+const dagMap = (packed) => new Map(packed.map(([k, d, ps]) => [k, { d, p: ps.map((x) => [...x]) }]));
+const packMap = (m) => [...m].sort((a, b) => a[1].d - b[1].d).map(([k, v]) => [k, v.d, v.p]);
+function lcaOf(A, B) {
+  const ax = new Set();
+  for (const m of [A, B]) for (const v of m.values()) for (const p of v.p) if (p[3]) ax.add(p[0]);
+  const common = [...A.keys()].filter((k) => B.has(k) && !ax.has(k));
+  const anc = (m, n) => {
+    const out = new Set(), st = [n];
+    while (st.length) for (const p of m.get(st.pop())?.p || []) if (!out.has(p[0])) { out.add(p[0]); st.push(p[0]); }
+    return out;
+  };
+  const low = common.filter((c) => !common.some((o) => o !== c && (anc(A, o).has(c) || anc(B, o).has(c))));
+  return low.sort((a, b) => A.get(a).d + B.get(a).d - A.get(b).d - B.get(b).d);
+}
+function makePair(lng, res, c, other) {
+  const o = OTHER[lng];
+  const A = dagMap(res.entry.d[c[2]] || res.entry.d[0]);
+  const B = dagMap(other.entry.d[c[1]] || other.entry.d[0]);
+  for (const [child, par, t] of c[6] || []) {
+    if (!B.has(child)) B.set(child, { d: 0, p: [] });
+    const ch = B.get(child);
+    if (!ch.p.some((p) => p[0] === par)) ch.p.unshift([par, t, 0]);
+    if (!B.has(par)) B.set(par, { d: ch.d + 1, p: [] });
+  }
+  const lca = lcaOf(A, B);
+  const pa = packMap(A), pb = packMap(B);
+  const pair = { [lng]: pa[0][0], [o]: pb[0][0], A: { [lng]: pa, [o]: pb }, lca, ghosts: [],
+    flags: { [lng]: res.entry.f?.[c[2]] || [], [o]: other.entry.f?.[c[1]] || [] } };
+  if (lca[0] === pair.nl) pair.flags.loan = "en<nl";
+  else if (lca[0] === pair.en) pair.flags.loan = "nl<en";
+  return pair;
 }
 
 let LANGS = {};
 const langP = Promise.all([getJSON(`${DATA}/langs.json`), getJSON(`${DATA}/meta.json`)])
-  .then(([l, meta]) => { LANGS = l; N_BUCKETS = meta.buckets; W_BUCKETS = meta.word_buckets || W_BUCKETS; });
+  .then(([l, meta]) => { LANGS = l; W_BUCKETS = meta.word_buckets || W_BUCKETS; });
 
 /* ---------- formatting ---------- */
 
@@ -244,7 +318,7 @@ function setupMap() {
 
 function frameFor() {
   // bbox of the languages on screen, padded, with a minimum span; whole Europe when idle
-  const pts = model ? [...model.info.values()].map((it) => lang(it.n[1])).filter((L) => L.lat != null && L.lon > -30 && L.lon < 70 && L.lat > 25) : [];
+  const pts = model ? [...model.info.values()].map((it) => lang(it.n[1])).filter((L) => L.lat != null && L.lat > -20) : [];
   if (!pts.length) return [[-11, 36], [44, 36], [-11, 63], [44, 63], [14, 66]];
   let [x0, x1, y0, y1] = [Infinity, -Infinity, Infinity, -Infinity];
   for (const L of pts) { x0 = Math.min(x0, L.lon); x1 = Math.max(x1, L.lon); y0 = Math.min(y0, L.lat); y1 = Math.max(y1, L.lat); }
@@ -388,6 +462,7 @@ function arcClass(child, p) {
 }
 
 function drawStatic() {
+  linkPopHide();
   setupMap();
   laid = null;
   if (!model) { $("#unmapped").hidden = true; render(currentYear); return; }
@@ -398,11 +473,30 @@ function drawStatic() {
     haloLang.add(l.it.n[1]);
     gHalos.append("circle").attr("class", `halo ${sideClass(l.it)}`).datum(l).style("opacity", 0);
   }
+  // a parent without a map position (Translingual, a far-off language not in the table) is skipped
+  // over: the arc goes on to the nearest ancestor that is on the map, so the line doesn't break
+  const mappedAbove = (k, seen = new Set()) => {
+    if (laid.has(k)) return k;
+    if (seen.has(k)) return null;
+    seen.add(k);
+    for (const q of model.info.get(k)?.parents || []) {
+      if (q.ax) continue;
+      const m = mappedAbove(q.k, seen);
+      if (m) return m;
+    }
+    return null;
+  };
+  const drawn = new Set();
   for (const l of laid.values()) for (const p of l.it.parents) {
-    const a = laid.get(p.k);
-    if (!a || p.ax) continue;
-    gArcs.append("path").attr("class", arcClass(l.it, p))
-      .datum({ a, b: l, ghost: !!p.ghost, t0: model.info.get(p.k)?.t ?? l.it.t, t1: l.it.t }).style("opacity", 0);
+    if (p.ax) continue;
+    const ak = mappedAbove(p.k);
+    const a = ak && laid.get(ak);
+    if (!a || drawn.has(ak + ">" + l.it.key)) continue;
+    drawn.add(ak + ">" + l.it.key);
+    gArcs.append("path").attr("class", arcClass(l.it, p) + (ak !== p.k ? " bridge" : ""))
+      .datum({ a, b: l, ghost: !!p.ghost, t0: model.info.get(ak)?.t ?? l.it.t, t1: l.it.t }).style("opacity", 0)
+      .on("mouseenter", (ev) => linkPopShow(ev, l.it.key, ak, p.t, p.u, ak !== p.k ? p.k : null))
+      .on("mousemove", linkPopMove).on("mouseleave", linkPopHide);
   }
   for (const l of laid.values()) {
     const it = l.it;
@@ -717,8 +811,13 @@ function drawTree() {
   for (const e of tree.edges) {
     const [x1, y1] = pos(e.p), [x2, y2] = pos(e.c);
     const ym = (y1 + y2) / 2;
-    ge.append("path").attr("class", `te ${e.t === "bor" ? lineOf(e.c).replace(" ghost", "") : lineOf(e.c)} ${e.t}`).datum(e)
-      .attr("d", x1 === x2 ? `M${x1},${y1}V${y2}` : `M${x1},${y1}C${x1},${ym} ${x2},${ym} ${x2},${y2}`);
+    const d = x1 === x2 ? `M${x1},${y1}V${y2}` : `M${x1},${y1}C${x1},${ym} ${x2},${ym} ${x2},${y2}`;
+    const vis = ge.append("path").attr("class", `te ${e.t === "bor" ? lineOf(e.c).replace(" ghost", "") : lineOf(e.c)} ${e.t}`).datum(e).attr("d", d);
+    // wide invisible twin: easy to hover, shows "X is derived from Y"
+    ge.append("path").attr("class", "thit").attr("d", d)
+      .on("mouseenter", (ev) => { vis.classed("hl", true); linkPopShow(ev, e.c, e.p, e.t, e.u); })
+      .on("mousemove", linkPopMove)
+      .on("mouseleave", () => { vis.classed("hl", false); linkPopHide(); });
   }
   const gn = s.append("g");
   for (const [k, c] of tree.col) {
@@ -840,55 +939,47 @@ function showCard(k) {
   ].filter(Boolean));
 }
 
-function renderPanel(state) {
+const LINE_TYPES = [["inh", "inherited", "passed down from parent language to child"],
+  ["bor", "borrowed", "taken from another language"], ["der", "derived", "formed from it, or a form of it"],
+  ["cal", "calque", "translated part by part (onder-werp = sub-iectum)"], ["cmp", "compound part", "one part of a compound"]];
+function lineLegend() {
+  const used = new Set([...model.info.values()].flatMap((it) => it.parents.filter((p) => !p.ax).map((p) => p.t)));
+  const svgNS = "http://www.w3.org/2000/svg";
+  const sw = (t) => {
+    const s = document.createElementNS(svgNS, "svg");
+    s.setAttribute("width", "30"); s.setAttribute("height", "8"); s.setAttribute("aria-hidden", "true");
+    const ln = document.createElementNS(svgNS, "line");
+    for (const [k, v] of Object.entries({ x1: 2, y1: 4, x2: 28, y2: 4, class: `ls ${t}` })) ln.setAttribute(k, v);
+    s.append(ln);
+    return s;
+  };
+  return el("div", { class: "tlegend", "aria-label": "Line styles" },
+    ...LINE_TYPES.filter(([t]) => t === "inh" || used.has(t)).map(([t, name, desc]) =>
+      el("span", { class: used.has(t) ? "" : "unused", title: desc }, sw(t), name)));
+}
+
+function renderPanel() {
   const panel = $("#panel");
   panel.textContent = "";
   panel.scrollTop = 0;
-  const { pair } = model;
   panel.append(
     el("h2", {}, "Family tree"),
+    lineLegend(),
     el("p", { class: "thint" }, "Drag up or down on the tree to travel through time. Click a word for details."),
     el("div", { id: "treewrap" }, document.createElementNS("http://www.w3.org/2000/svg", "svg")),
+    el("div", { class: "card", id: "card", "aria-live": "polite" }),
   );
   $("#treewrap svg").id = "tree";
-  if (pair.ghosts?.length) {
-    panel.append(el("h2", {}, "Hidden relatives"));
-    for (const g of pair.ghosts) {
-      const line = g.side === "nl" ? "en" : "nl";
-      const from = model.info.get(g.from);
-      const leaves = g.branches.map((b) => model.info.get(b[b.length - 1]));
-      const modern = leaves.filter((x) => x.n[1] === line);
-      const wordBtn = (k) => el("button", { type: "button", class: "wl", onclick: () => focusNode(k) }, model.info.get(k).n[0]);
-      const box = el("div", { class: "ghostbox" });
-      if (g.loan) {   // the other language borrowed this very word (vrolijk -> frolic)
-        box.append(el("p", {}, `${NAME[line]} borrowed ${NAME[g.side]} `, wordBtn(g.from), " as ",
-          ...modern.flatMap((x, i) => [i ? (i === modern.length - 1 ? " and " : ", ") : "", el("b", {}, wordBtn(x.key))]), "."));
-        panel.append(box);
-        continue;
-      }
-      box.append(el("p", {},
-        `${NAME[g.side]} `, el("i", {}, model.info.get(pair[g.side]).n[0]), " goes back to ", wordBtn(g.from),
-        ` (${nodeLang(from.n).name}), which also gave ${NAME[line]} `,
-        ...(modern.length ? modern.flatMap((x, i) => [i ? (i === modern.length - 1 ? " and " : ", ") : "", el("b", {}, wordBtn(x.key))]) : ["words that have since died out"]),
-        modern.length ? "." : el("span", { class: "dead" }, " †")));
-      for (const b of g.branches) {
-        box.append(el("p", { class: `route ${line}` }, ...b.flatMap((k, i) => [i ? " → " : "",
-          el("span", { class: "rl" }, abbr(model.info.get(k).n[1])), " ", wordBtn(k)]),
-          model.info.get(b[b.length - 1]).n[1] !== line ? el("span", { class: "dead" }, " †") : ""));
-      }
-      panel.append(box);
-    }
-  }
-  panel.append(el("div", { class: "card", id: "card", "aria-live": "polite" }));
-  pinned = pair[state.dir];
+  pinned = model.pair[state.lang];
   drawTree();
   showCard(pinned);
 }
 
 /* ---------- header ---------- */
 
-function summary(state) {
+function summary() {
   const { pair } = model;
+  const L0 = state.lang, L1 = OTHER[L0];
   const w = (side) => el("em", {}, model.info.get(pair[side]).n[0]);
   const parts = [];
   const flags = pair.flags || {};
@@ -896,71 +987,102 @@ function summary(state) {
   if (flags.loan === "en<nl") parts.push("English ", w("en"), " was borrowed from Dutch ", w("nl"), ".");
   else if (flags.loan === "nl<en") parts.push("Dutch ", w("nl"), " was borrowed from English ", w("en"), ".");
   else if (lcaK) {
-    const it = model.info.get(lcaK);
-    const L = nodeLang(it.n);
-    const anyBor = [...model.info.values()].some((x) => !x.side.startsWith("ghost") && x.parents.some((p) => p.t === "bor"));
-    parts.push(anyBor ? "Both go back to " : "Cognates: both descend from ", L.name, " ", el("em", {}, it.n[0]),
+    const it = model.info.get(lcaK), L = nodeLang(it.n);
+    const anyBor = [...model.info.values()].some((x) => x.parents.some((p) => p.t === "bor"));
+    const far = it.n[1] === "ine-pro";
+    parts.push(w(L0), " and ", w(L1), far ? " are distant cousins: " : " are related: ",
+      anyBor ? "both go back to " : "both descend from ", L.name, " ", el("em", {}, it.n[0]),
       L.from != null ? ` (${fmtRange(L)})` : "", anyBor ? ", by different routes." : ".");
-  } else if (pair.ghosts?.length) {
-    const leafOf = (g) => g.branches.map((b) => model.info.get(b[b.length - 1])).find((x) => x.n[1] === (g.side === "nl" ? "en" : "nl"));
-    const cog = pair.ghosts.find((g) => !g.loan);
-    const loan = pair.ghosts.find((g) => g.loan && leafOf(g));
-    // name the two words: "unrelated" is about the translation pair, not about the relatives found
-    parts.push(w(state.dir), " and ", w(OTHER[state.dir]), " are not related. ");
-    if (cog) {
-      const line = cog.side === "nl" ? "en" : "nl", leaf = leafOf(cog);
-      if (leaf) parts.push("But ", w(cog.side), " does have an ", NAME[line], " relative: ", el("em", {}, leaf.n[0]), ". ");
-      else parts.push(w(cog.side), " once had an ", NAME[line], " relative, but it has died out. ");
-    }
-    if (loan) {
-      const line = loan.side === "nl" ? "en" : "nl";
-      const as = leafOf(loan).n[0], same = as.toLowerCase() === model.info.get(pair[loan.side]).n[0].toLowerCase();
-      if (same) parts.push(cog ? "And " : "But ", NAME[line], " has also borrowed ", w(loan.side), " itself.");
-      else parts.push(cog ? "And " : "But ", NAME[line], " did borrow ", w(loan.side), ": it became ", el("em", {}, as), ".");
+    if (pair.lca.length > 1) {
+      const more = pair.lca.slice(1).map((k) => model.info.get(k)).filter(Boolean);
+      if (more.length) parts.push(" They also share ", ...more.flatMap((x, i) => [i ? ", " : "", el("em", {}, x.n[0])]), ".");
     }
   } else {
-    parts.push("No link found between ", w(state.dir), " and ", w(OTHER[state.dir]), " in Wiktionary's data.");
+    parts.push("No link found between ", w(L0), " and ", w(L1), " in Wiktionary's data.");
   }
   const notes = [];
-  for (const side of ["en", "nl"]) {
+  const cal = [...model.info.values()].find((x) => !x.side.startsWith("ghost") && x.parents.some((p) => p.t === "cal"));
+  if (cal) {
+    const src = model.info.get(cal.parents.find((p) => p.t === "cal").k);
+    notes.push(`${cal.n[0]} is a calque of ${nodeLang(src.n).name} ${src.n[0]}: a part-by-part translation, so the link runs through meaning rather than sound.`);
+  }
+  for (const side of [L0, L1]) {
     const f = flags[side] || [];
-    if (f.includes("unknown")) notes.push(`The origin of ${model.info.get(pair[side]).n[0]} is unknown.`);
-    else if (f.includes("uncertain")) notes.push(`The origin of ${model.info.get(pair[side]).n[0]} is uncertain.`);
-    else if (f.includes("alt_chain")) notes.push(`Wiktionary gives more than one possible history for ${model.info.get(pair[side]).n[0]}; this shows the first.`);
+    const nm = model.info.get(pair[side]).n[0];
+    if (f.includes("unknown")) notes.push(`The origin of ${nm} is unknown.`);
+    else if (f.includes("uncertain")) notes.push(`The origin of ${nm} is uncertain.`);
+    else if (f.includes("alt_chain")) notes.push(`Wiktionary gives more than one possible history for ${nm}; this shows the first.`);
   }
   return [el("p", { class: "summary" }, ...parts), ...notes.map((n) => el("p", { class: "note" }, n))];
 }
 
-function renderHead(state, res) {
+const wordLink = (lng, w, pick) => `#${lng}/${encodeURIComponent(w)}${pick ? "/" + encodeURIComponent(pick) : ""}`;
+
+function meaningLine(res) {
+  // Dutch word: its English glosses; English word: its Dutch translations. Each links to that word.
+  const lng = state.lang, o = OTHER[lng], t = res.entry.t || [];
+  if (!t.length) return null;
+  const links = t.flatMap((x, i) => [i ? ", " : "", el("a", { href: wordLink(o, x), title: `${x}: its ${NAME[lng]} relatives` }, x)]);
+  return el("p", { class: "meaning" }, lng === "nl" ? "means " : "in Dutch: ", ...links);
+}
+
+const WHY = { syn: () => "synonym", rel: () => "related word", hyp: () => "broader term",
+  tr: (v) => `relative of its translation ‘${v}’`, near: (v) => `near its translation ‘${v}’`, cat: (v) => `also about ${v.toLowerCase()}` };
+
+function renderHead(res) {
   const head = $("#head");
   head.textContent = "";
-  const { dir, cands, sel } = state;
-  const c = cands[sel];
+  const { lang: lng, entry, sel } = state;
+  const o = OTHER[lng];
+  const cogs = entry.c;
+  const c = cogs[sel];
   head.append(el("h2", { class: "title" },
-    el("span", { class: `w ${dir}` }, res.word),
-    el("span", { class: "to" }, "→"),
-    el("span", { class: `w ${OTHER[dir]}` }, c[0])));
+    el("span", { class: `w ${lng}` }, res.word),
+    c ? el("span", { class: "to" }, "~") : null,
+    c ? el("span", { class: `w ${o}` }, c[0]) : null));
+  const ml = meaningLine(res);
+  if (ml) head.append(ml);
   if (res.from) head.append(el("p", { class: "note" }, `Showing ${res.word} (you typed ${res.from}).`));
   if (res.also) {
-    // the word is a headword in its own right *and* an inflected form of another word (kijk / kijken)
-    const noEty = !model || (model.pair.A[dir] || []).length <= 1;
-    const go = el("a", { href: `#${dir}/${encodeURIComponent(res.also)}` }, `Show ${res.also} instead →`);
-    head.append(el("p", { class: `formhint${noEty ? " strong" : ""}` },
+    const noEty = (entry.d[0] || []).length <= 1;
+    const go = el("a", { href: wordLink(lng, res.also) }, `Show ${res.also} instead →`);
+    head.append(el("p", { class: `formhint${noEty && !cogs.length ? " strong" : ""}` },
       noEty ? [`Wiktionary has no etymology for `, el("em", {}, res.word), `, but `, el("em", {}, res.word),
                ` is also a form of `, el("em", {}, res.also), `, which may be more informative. `, go]
             : [el("em", {}, res.word), ` is also a form of `, el("em", {}, res.also), `. `, go]));
   }
-  if (cands.length > 1) {
-    const chips = el("div", { class: "chips", role: "group", "aria-label": "Other translations" });
-    cands.forEach((cc, i) => chips.append(el("button", {
-      type: "button", class: `chip ${OTHER[dir]}`, "aria-pressed": i === sel ? "true" : "false",
-      disabled: !cc[3], title: [cc[1], cc[2]].filter(Boolean).join(" · ") + (cc[3] ? "" : " (not traced)"),
-      onclick: () => { location.hash = `#${dir}/${encodeURIComponent(res.word)}/${encodeURIComponent(cc[0])}`; },
-    }, cc[0])));
-    head.append(chips);
+  if (!cogs.length) {
+    head.append(el("p", { class: "summary" }, `No ${NAME[o]} relative of `, el("em", {}, res.word), " in the data."));
+    const s = entry.s || [];
+    if (s.length) {
+      head.append(el("p", { class: "note" }, `Words close in meaning that do have one:`));
+      head.append(el("ul", { class: "sugg" }, ...s.map(([x, y, why, via]) => el("li", {},
+        el("a", { href: wordLink(lng, x, y) }, el("span", { class: lng }, x), el("span", { class: "tilde" }, "~"), el("span", { class: o }, y)),
+        el("span", { class: "why" }, (WHY[why] || (() => ""))(via || ""))))));
+    }
+    return;
   }
-  if (c[1]) head.append(el("p", { class: "note" }, `sense: ${c[1]}`));
-  if (model) head.append(...summary(state));
+  if (cogs.length > 1 || c) {
+    const box = el("div", { class: "cogs", role: "group", "aria-label": `${NAME[o]} relatives` });
+    let grp = null, last = null;
+    cogs.forEach((cc, i) => {
+      if (cc[3] !== last) {
+        last = cc[3];
+        const n = res.nodes[cc[3]] || [cc[3].split("|")[1], cc[3].split("|")[0]];
+        const fromIt = cc[3] === entry.d[cc[2]]?.[0]?.[0];   // the other language borrowed this very word
+        grp = el("div", { class: `grp${n[1] === "ine-pro" ? " far" : ""}` },
+          el("span", { class: "via" }, fromIt ? `borrowed into ${NAME[o]}` : ["via ", abbr(n[1]), " ", el("em", {}, n[0])]));
+        box.append(grp);
+      }
+      grp.append(el("button", {
+        type: "button", class: `chip ${o}`, "aria-pressed": i === sel ? "true" : "false",
+        title: cc[5] ? "same meaning" : "",
+        onclick: () => { location.hash = wordLink(lng, res.word, cc[0]); },
+      }, cc[0]));
+    });
+    head.append(box);
+  }
+  if (model) head.append(...summary());
 }
 
 function renderMessage(html) {
@@ -972,55 +1094,93 @@ function renderMessage(html) {
   drawTicks();
 }
 
+/* ---------- homepage picks (highlights.json, built by _etymap/build/highlights.py) ---------- */
+
+const PICK_CATS = [
+  ["drifted", "Same word, new meaning", (x) => `‘${x.wg}’ · both from ${x.via_lang} ${x.via}`],
+  ["distant", "Distant cousins", (x) => `‘${x.wg}’ · they meet in ${x.via}, some 5,000 years ago`],
+  ["journeys", "The scenic route", (x) => `a detour through ${(x.trip || []).join(" and ")} · ${x.langs} languages`],
+];
+const introHTML = $("#head").innerHTML;
+const sample = (arr, n) => {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a.slice(0, n);
+};
+function renderPicks() {
+  const box = $("#picks");
+  if (!box) return;
+  getJSON("highlights.json").then((H) => {
+    const draw = () => {
+      box.replaceChildren(...PICK_CATS.filter(([k]) => H[k]?.length).map(([k, title, line]) =>
+        el("section", { class: "pickcat" }, el("h3", {}, title),
+          ...sample(H[k], 3).map((x) => el("a", { class: "pick", href: wordLink("nl", x.w, x.c) },
+            el("span", { class: "pw" }, el("span", { class: "nl" }, x.w), el("span", { class: "tilde" }, "~"), el("span", { class: "en" }, x.c)),
+            el("span", { class: "pl" }, line(x)))))),
+        el("button", { type: "button", class: "reshuffle", onclick: draw }, "↻ more"));
+    };
+    draw();
+  }).catch(() => {});
+}
+
 /* ---------- routing ---------- */
 
-let state = { dir: "en" };
-function setDir(dir) {
-  state.dir = dir;
-  $("#dir").classList.toggle("rev", dir === "nl");
-  $("#dir [data-from]").textContent = dir.toUpperCase();
-  $("#dir [data-to]").textContent = OTHER[dir].toUpperCase();
-  $("#q").placeholder = dir === "en" ? "Type an English word…" : "Typ een Nederlands woord…";
+let state = { lang: "nl" };
+function setLang(lng) {
+  state.lang = lng;
+  for (const b of document.querySelectorAll("#lang button")) b.setAttribute("aria-pressed", b.dataset.lang === lng ? "true" : "false");
+  $("#q").placeholder = lng === "en" ? "Type an English word…" : "Typ een Nederlands woord…";
 }
 
 async function route() {
-  const [dir, word, pick] = location.hash.slice(1).split("/").map((s) => decodeURIComponent(s || ""));
-  if (!word || !["en", "nl"].includes(dir)) { setDir(dir === "nl" ? "nl" : "en"); return; }
-  setDir(dir);
-  $("#q").value = word;
-  await langP;
-  const res = await lookupWord(dir, word.trim());
-  if (!res) {
-    renderMessage(`<p class="notfound">No ${NAME[dir]} entry for <em>${escapeHTML(word)}</em> with a ${NAME[OTHER[dir]]} translation in Wiktionary's data.</p>
-      <p class="note">Try the dictionary form (e.g. <em>take</em> rather than <em>took</em>), or switch direction.</p>`);
+  const [lng, word, pick] = location.hash.slice(1).split("/").map((s) => decodeURIComponent(s || ""));
+  if (!word || !["en", "nl"].includes(lng)) {
+    setLang(lng === "en" ? "en" : "nl");
+    if (model || !$("#picks")) {   // back to the start page
+      model = null; tree = null;
+      $("#head").innerHTML = introHTML;
+      $("#panel").textContent = "";
+      drawStatic(); drawTicks();
+    }
+    renderPicks();
     return;
   }
-  const cands = res.cands;
-  let sel = pick ? cands.findIndex((c) => c[0] === pick) : -1;
-  if (sel < 0) sel = Math.max(0, cands.findIndex((c) => c[3]));
-  state = { dir, word: res.word, cands, sel };
-  const pid = cands[sel][3];
-  if (!pid) {
+  setLang(lng);
+  $("#q").value = word;
+  await langP;
+  let res;
+  try { res = await lookupWord(lng, word.trim()); } catch { res = null; }
+  if (!res) {
+    renderMessage(`<p class="notfound">No ${NAME[lng]} word <em>${escapeHTML(word)}</em> in the data.</p>
+      <p class="note">Try the dictionary form (e.g. <em>${lng === "nl" ? "lopen</em> rather than <em>liep" : "take</em> rather than <em>took"}</em>), or switch language.</p>`);
+    return;
+  }
+  const cogs = res.entry.c;
+  let sel = pick ? cogs.findIndex((c) => c[0] === pick) : -1;
+  if (sel < 0) sel = 0;
+  state = { lang: lng, word: res.word, res, entry: res.entry, sel };
+  if (!cogs.length) {
     model = null;
     tree = null;
-    renderHead(state, res);
-    $("#head").append(el("p", { class: "summary" }, "This translation is a phrase or wasn't traced, so there is no history to show."));
+    renderHead(res);
     $("#panel").textContent = "";
     drawStatic(); drawTicks();
     return;
   }
-  let got;
-  try { got = await getPair(pid); } catch {
+  const c = cogs[sel];
+  let other;
+  try { other = await lookupWord(OTHER[lng], c[0]); } catch { other = null; }
+  if (!other) {
     renderMessage(`<p class="notfound">Couldn't load the data for this word. Please try again.</p>`);
     return;
   }
-  const { pair, nodes } = got;
   await landP;
-  model = buildModel(pair, nodes);
+  const pair = makePair(lng, res, c, other);
+  model = buildModel(pair, { ...other.nodes, ...res.nodes });
   const ts = [...model.info.values()].map((x) => x.t);
   yMin = Math.max(EARLIEST, Math.min(...ts) - 150);
-  renderHead(state, res);
-  renderPanel(state);
+  renderHead(res);
+  renderPanel();
   drawStatic();
   drawTicks();
   scrub.value = 0;
@@ -1037,7 +1197,7 @@ async function suggest() {
   const v = q.value.trim().toLowerCase();
   if (!v) { closeList(); return; }
   let idx;
-  try { idx = await getJSON(`${DATA}/index-${state.dir}.json`); } catch { return; }
+  try { idx = await getJSON(`${DATA}/index-${state.lang}.json`); } catch { return; }
   if (q.value.trim().toLowerCase() !== v) return;
   // binary search on the lowercase-sorted list
   let lo = 0, hi = idx.length;
@@ -1052,9 +1212,9 @@ async function suggest() {
   q.setAttribute("aria-expanded", out.length ? "true" : "false");
 }
 function closeList() { list.hidden = true; q.setAttribute("aria-expanded", "false"); active = -1; }
-function go(w) { closeList(); q.blur(); location.hash = `#${state.dir}/${encodeURIComponent(w.trim())}`; }
+function go(w) { closeList(); q.blur(); location.hash = wordLink(state.lang, w.trim()); }
 q.addEventListener("input", suggest);
-q.addEventListener("focus", () => getJSON(`${DATA}/index-${state.dir}.json`).catch(() => {}));
+q.addEventListener("focus", () => getJSON(`${DATA}/index-${state.lang}.json`).catch(() => {}));
 q.addEventListener("blur", () => setTimeout(closeList, 100));
 q.addEventListener("keydown", (e) => {
   const items = [...list.children];
@@ -1071,16 +1231,13 @@ $("#search").addEventListener("submit", (e) => {
   const items = [...list.children];
   go(active >= 0 && items[active] ? items[active].textContent : q.value);
 });
-$("#dir").addEventListener("click", () => {
-  // swap direction; if a pair is showing, look the translation up the other way
-  if (state.word && state.cands) {
-    const other = state.cands[state.sel][0];
-    location.hash = `#${OTHER[state.dir]}/${encodeURIComponent(other)}/${encodeURIComponent(state.word)}`;
-  } else {
-    setDir(OTHER[state.dir]);
-    q.value = "";
-    q.focus();
-  }
+for (const b of document.querySelectorAll("#lang button")) b.addEventListener("click", () => {
+  const lng = b.dataset.lang;
+  if (lng === state.lang) return;
+  // a pair is showing: look at it from the other side (tuin ~ town -> town ~ tuin)
+  const c = state.word && state.entry?.c?.[state.sel];
+  if (c) location.hash = wordLink(lng, c[0], state.word);
+  else { setLang(lng); q.value = ""; closeList(); q.focus(); }
 });
 
 /* ---------- boot ---------- */

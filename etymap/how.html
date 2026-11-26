@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>How Etymap works · Oisín Nolan</title>
-<meta name="description" content="The algorithms behind Etymap: parsing Wiktionary into a graph, lowest common ancestors in a DAG, ghost-branch search and a static-site data layout.">
+<meta name="description" content="The algorithms behind Etymap: parsing Wiktionary into a graph, lowest common ancestors in a DAG, an ancestor index for finding every cognate, and a static-site data layout.">
 <style>
   :root {
     --bg: #fcfcfa; --text: #1c1c1c; --muted: #6b6b6b; --line: #e6e4df; --accent: #2f5bd3; --code-bg: #f2f1ed;
@@ -68,10 +68,11 @@
 
 <div class="prose">
 
-<p>When you type <em>take</em>, the page looks up its Dutch translation, <em>nemen</em>, and then has to answer a
-question that sounds simple: <em>where do these two words meet?</em> To answer it, the build turns a dictionary
-into a graph, asks a lowest-common-ancestor question on that graph, and then searches it for
-"ghost" relatives. Everything is computed ahead of time, so your browser only downloads a few small files.</p>
+<p>When you type Dutch <em>hond</em>, the page shows its English relatives: <em>hound</em>, which shares a
+Proto-West Germanic ancestor, and further back <em>canine</em> and <em>cynic</em>, which meet it in Proto-Indo-European. To get
+there, the build turns a dictionary into a graph, traces every word's ancestors, and indexes the result so that any
+two words that share an ancestor can be found at once. Everything is computed ahead of time, so your browser only
+downloads a few small files.</p>
 
 <h2>1. Building the graph</h2>
 
@@ -104,6 +105,11 @@ except in reconstructions, to match how Wiktionary names its pages). Each templa
   takes the best tier available, and within a tier it prefers inherited over borrowed over derived.</li>
 </ul>
 
+<p>One more repair: Latin and Greek participles often have their own pages that say only "form of" their verb.
+English <em>subject</em> comes from Latin <em>subiectus</em>, and Dutch <em>onderwerp</em> is a calque (a
+part-by-part translation) of <em>subiectum</em>. Both are forms of <em>subiciō</em> "to throw under", so the build adds
+an edge from each form to its lemma, and the two words meet there.</p>
+
 <p>The result is about 1.8 million nodes and 2.9 million edges.</p>
 
 <h2>2. Tracing a word's ancestors</h2>
@@ -119,9 +125,9 @@ that get cut are the most distant ones.</p>
 <h2>3. Finding the common ancestor</h2>
 
 <p>Write <span class="math">A(x)</span> for the set of ancestors of <span class="math">x</span> (including
-<span class="math">x</span> itself). The common ancestors of an English word <span class="math">e</span> and a
-Dutch word <span class="math">d</span> are <span class="math">C = A(e) ∩ A(d)</span>. Ancestry is a partial
-order, and the <strong>lowest common ancestors</strong> are the <em>minimal elements</em> of
+<span class="math">x</span> itself). A Dutch word <span class="math">d</span> and an English word
+<span class="math">e</span> are related when <span class="math">C = A(d) ∩ A(e)</span> is non-empty. Ancestry is a
+partial order, and the <strong>lowest common ancestors</strong> are the <em>minimal elements</em> of
 <span class="math">C</span>: the common ancestors that have no other common ancestor below them.</p>
 
 <figure>
@@ -143,7 +149,8 @@ order, and the <strong>lowest common ancestors</strong> are the <em>minimal elem
 
 <p>In a <em>tree</em> the LCA is unique, and classic algorithms answer LCA queries in constant time after linear
 preprocessing. In a <em>DAG</em> there can be several minimal common ancestors: a compound and its translation
-might share two roots that are unrelated to each other. The general problem is much harder. Bender et al.,
+might share two roots that are unrelated to each other (<em>nightmare</em> meets Dutch <em>nachtmerrie</em> in
+both <em>*naht</em> and <em>*marā</em>). The general problem is much harder. Bender et al.,
 <a href="https://doi.org/10.1016/j.jalgor.2005.08.001">"Lowest common ancestors in trees and directed acyclic
 graphs"</a> (2005), relate the all-pairs version to fast matrix multiplication. Here each DAG has a median of 12
 nodes, so the direct method works fine: compute <span class="math">C</span>, then drop every element that is an
@@ -153,75 +160,87 @@ two words.</p>
 <p>Two special cases fall out of this for free:</p>
 <ul>
   <li><strong>Loanwords.</strong> If the LCA is one of the two words itself, one word was borrowed from the other.
-  English <em>yacht</em> descends from Dutch <em>jacht</em>, so the LCA of (<em>yacht</em>, <em>jacht</em>) is
-  <em>jacht</em>.</li>
+  English <em>yacht</em> descends from Dutch <em>jacht</em>, so the LCA of (<em>jacht</em>, <em>yacht</em>) is
+  <em>jacht</em>. The same goes for <em>vrolijk</em> → <em>frolic</em>.</li>
   <li><strong>Different routes.</strong> <em>table</em> and <em>tafel</em> share the LCA Latin <em>tabula</em>,
   but one path runs through Old French and the other through an early Germanic borrowing. When any edge on
   either path is a borrowing, the summary says "by different routes".</li>
 </ul>
 
 <p class="callout">A judgement call: Wiktionary sometimes has several unrelated words with the same spelling
-("Etymology 1", "Etymology 2"). When a translation doesn't say which one it means, the build tries each
-combination and keeps the one that connects. That biases things slightly towards finding a relation.</p>
+("Etymology 1", "Etymology 2"). The build traces each one separately, and each relative remembers which of them it
+belongs to, so <em>bank</em> "bench" and <em>bank</em> "river bank" get their own relatives.</p>
 
-<h2>4. Finding hidden relatives</h2>
+<h2>4. Finding every relative</h2>
 
-<p>Often there is no common ancestor: <em>take</em> came from Old Norse, while <em>nemen</em> is native
-Germanic. But Proto-West Germanic <em>*neman</em>, an ancestor of <em>nemen</em>, <em>also</em> had an English
-line: Old English <em>niman</em> → Middle English <em>nimen</em> → English <em>nim</em> (archaic: "to steal")
-and, surprisingly, <em>numb</em> (originally "taken", as in "seized by cold").</p>
+<p>Comparing a word with all 76,000 English or 51,000 Dutch words one by one would be slow. Instead the build
+inverts the ancestry: an <strong>index</strong> maps every ancestor to the words that descend from it. For a word
+<span class="math">d</span>, each node of <span class="math">A(d)</span> is looked up in the other language's index,
+and every word found there is a relative. The true LCA of each pair is then computed as above. Relatives are grouped
+by their LCA and ordered from the closest group (Proto-West Germanic, say) to the most distant (Proto-Indo-European).
+The groups are filled breadth-first, two per ancestor before any group gets more, so the distant relatives (often the
+most surprising) aren't crowded out by close ones. Within a group, well-known words come first.</p>
 
-<p>Finding these means reversing the edges. For each ancestor of the Dutch word, from nearest to most distant,
-the build runs a <strong>depth-first search downwards</strong> through the children index. The search may only
-enter nodes in the other language's line (Old English, Middle English, English, Scots, plus Proto-West Germanic
-as a stepping stone). It stops at the first modern English word, so <em>numb</em> appears but <em>numbness</em>
-doesn't, and it stops at the first ancestor that turns up anything. A branch that never reaches modern English is
-marked † (died out).</p>
+<p>Taken literally, "shares an ancestor" is far too generous, and most of the work is in deciding what to leave out:</p>
+<ul>
+  <li><strong>Words built from a modern word.</strong> <em>greyhound</em> reaches <em>*hundaz</em> only through
+  <em>hound</em>, so it isn't listed as a relative of <em>hond</em>: <em>hound</em> is.</li>
+  <li><strong>Compounds.</strong> <em>seawater</em> shares <em>*watar</em> with Dutch <em>water</em>, but listing every
+  compound would bury the real cognate. A compound only matches another compound, and then both parts must be shared
+  (<em>nachtmerrie</em> ~ <em>nightmare</em>). A suffixed form made in <em>another</em> language counts as a plain
+  step, so <em>canine</em> (from Latin <em>canīnus</em>, <em>canis</em> + <em>-īnus</em>) still reaches
+  <em>*ḱwṓ</em>.</li>
+  <li><strong>Proto-Indo-European suffixes.</strong> Wiktionary analyses many PIE roots as root + suffix. Following
+  those edges would make <em>hond</em> a relative of <em>oh</em> through a shared ending, so they are never followed.</li>
+  <li><strong>Rare words.</strong> Very rare words are dropped (roughly: ones Wiktionary translates into fewer than three
+  languages), unless they were borrowed directly.</li>
+</ul>
 
-<figure>
-<svg viewBox="0 0 640 250" role="img" aria-label="From *neman, the Dutch line continues to nemen; a dotted English branch leads to numb and nim">
-  <path class="e nl" d="M320 30 C 360 60, 440 70, 470 100"/><path class="e nl" d="M470 100 L470 160"/><path class="e nl" d="M470 160 L470 220"/>
-  <path class="e en ghost" d="M320 30 C 280 60, 200 70, 170 100"/><path class="e en ghost" d="M170 100 L170 160"/>
-  <path class="e en ghost" d="M170 160 C 160 190, 120 200, 110 220"/><path class="e en ghost" d="M170 160 C 180 190, 220 200, 230 220"/>
-  <circle class="n nl" cx="320" cy="28" r="6"/><text x="332" y="26">*neman</text><text class="lg" x="332" y="40">Proto-West Germanic</text>
-  <circle class="n nl" cx="470" cy="100" r="6"/><text x="482" y="104">neman</text><text class="lg" x="482" y="117">Old Dutch</text>
-  <circle class="n nl" cx="470" cy="160" r="6"/><text x="482" y="164">nēmen</text><text class="lg" x="482" y="177">Middle Dutch</text>
-  <circle class="n nl" cx="470" cy="220" r="6"/><text x="482" y="224">nemen</text><text class="lg" x="482" y="237">Dutch</text>
-  <circle class="n en" cx="170" cy="100" r="4"/><text x="160" y="104" text-anchor="end">niman</text><text class="lg" x="160" y="117" text-anchor="end">Old English</text>
-  <circle class="n en" cx="170" cy="160" r="4"/><text x="160" y="164" text-anchor="end">nimen</text><text class="lg" x="160" y="177" text-anchor="end">Middle English</text>
-  <circle class="n en" cx="110" cy="220" r="4"/><text x="100" y="224" text-anchor="end">numb</text>
-  <circle class="n en" cx="230" cy="220" r="4"/><text x="242" y="224">nim</text>
-</svg>
-<figcaption>The ghost search starts at each ancestor of <em>nemen</em> and looks downwards for English-line descendants (dotted).</figcaption>
-</figure>
+<p>Some relatives are missed by the index because the two words' own pages never reach the same node. Dutch
+<em>wiel</em> goes back to Proto-Germanic <em>*hwehwlą</em>, but <em>wheel</em>'s page stops at a different
+reconstruction, <em>*hweulō</em>. The <em>*hwehwlą</em> page, however, lists Old English <em>hwēol</em> among its
+descendants. So for each Germanic ancestor the build also runs a <strong>depth-first search downwards</strong> through
+its descendants tree. The search may only enter the other language's line, and stops at the first modern word. A
+relative found this way is <em>grafted</em> onto its own ancestry at the first node its page knows (here
+<em>hwēol</em>), so the drawn tree stays consistent.</p>
 
-<p>The graph has a trap. Nodes are keyed by spelling, so <strong>homographs merge</strong>. For <em>egg</em>, the
-search correctly finds Old English <em>ǣġ</em> → Middle English <em>ey</em> (the native word that Norse
-<em>egg</em> replaced). But Middle English <em>ey</em>/<em>ay</em> is also a spelling of other words, and an
-unrestricted search walks straight into English <em>hay</em>, <em>eye</em> and <em>any</em>. The fix uses the fact
-that each descendants tree on Wiktionary is internally consistent, because one editor wrote it about one word.
-Every tree edge remembers which page's tree it came from, and the search first tries to stay
-<em>inside the tree of the ancestor it started from</em>. Only if that finds nothing does it fall back to the
-whole graph. The search then gives <em>ey</em> and, delightfully, <em>cockney</em>: a "cock's egg".</p>
+<p>The graph has a trap here. Nodes are keyed by spelling, so <strong>homographs merge</strong>: Middle English
+<em>ey</em> "egg" is also a spelling of other words, and an unrestricted search walks into <em>hay</em>, <em>eye</em> and
+<em>any</em>. Three guards keep this in check:</p>
+<ul>
+  <li>Each descendants tree on Wiktionary is internally consistent (one editor wrote it about one word), so the search
+  first stays inside the tree of the ancestor it started from.</li>
+  <li>A branch is rejected if the relative's own page names a parent in a different language for a step on it.</li>
+  <li>The search only starts from Germanic ancestors: further back, Latin <em>caseus</em> "cheese" picked up
+  <em>chess</em> and <em>choose</em>.</li>
+</ul>
 
-<p>Results are ranked so that modern words beat dead ends, common words (ones with translation tables) beat rare
-ones, and links stated on a word's own page beat inferred ones.</p>
+<p>Because the browser rebuilds each pair from the two words' own ancestries (plus any graft), the tree you see is
+always the one that justifies the match.</p>
+
+<h3>No relative?</h3>
+
+<p>About two in five words have no relative in the other language (Dutch <em>fiets</em> "bicycle" is of unknown
+origin). For those the page suggests <strong>words close in meaning that do have one</strong>. It draws on
+Wiktionary's synonyms, related terms and broader terms, on topical categories (<em>nl:Cycling</em>), and on the
+translation itself. <em>fiets</em> translates as <em>bicycle</em>, which goes back to Greek <em>kúklos</em>, which is
+related to Dutch <em>cyclus</em>. Its synonym <em>rijwiel</em> leads to <em>ride</em>.</p>
 
 <h2>5. Storing the data</h2>
 
-<p>There is no server, so everything is precomputed. The build resolves around 95,000 English–Dutch pairs in under a
-minute, and the browser fetches only what it needs:</p>
+<p>There is no server, so everything is precomputed. The whole build (ancestries, index, relatives and suggestions for
+127,000 words) runs in about a minute, and the browser fetches only what it needs:</p>
 
 <ul>
   <li><strong>Autocomplete</strong> downloads a sorted list of headwords once (about 200 kB compressed) and
   <strong>binary-searches</strong> it for your prefix on every keystroke.</li>
-  <li><strong>Words</strong> and <strong>pairs</strong> are both stored in <strong>hash buckets</strong>: a word
-  lives in file <span class="math">CRC32(word) mod 256</span>, and a resolved pair in
-  <span class="math">CRC32(pair id) mod 2048</span>. The browser computes the same hash, so it knows which file to fetch
-  without needing an index. Each lookup costs two small requests of roughly 50–120 kB. Inflected forms are stored as
-  redirects (<em>took</em> → <em>take</em>).</li>
-  <li>A pair is shared by both directions (<em>take → nemen</em> and <em>nemen → take</em> are the same pair), so it is
-  stored once.</li>
+  <li><strong>Words</strong> are stored in <strong>hash buckets</strong>: a word lives in file
+  <span class="math">CRC32(word) mod 2048</span> of its language. The browser computes the same hash, so it knows
+  which file to fetch without needing an index. Each entry holds the word's ancestry, its list of relatives and
+  the display data for every node. Inflected forms are stored as redirects (<em>liep</em> → <em>lopen</em>).</li>
+  <li>Showing a pair costs two small requests of roughly 20–70 kB: the typed word's bucket and the relative's.
+  The pair and its LCA are rebuilt in the browser from the two ancestries, so pairs are never stored, and any
+  relative can be shown however distant it is.</li>
 </ul>
 
 <h2>6. The timeline, family tree and map labels</h2>
@@ -246,7 +265,12 @@ inverted, and you can drag on the tree to scrub.</p>
 point-feature label placement problem). The page uses a simple greedy approximation. Labels are sorted by
 importance (the two words, then the common ancestor, then the form at the current moment, then everything else).
 Each is tried in four positions around its dot (the "four-position model"), and skipped if they all collide. Hover
-any dot to see a skipped label.</p>
+any dot to see a skipped label, or any link to see how two words are connected ("English <em>town</em> is
+inherited from Middle English <em>toun</em>").</p>
+
+<p><strong>Languages without a place.</strong> A few hundred rare languages (and Wiktionary's "Translingual") have no
+map position. They still appear in the tree, and on the map the arc skips over them to the nearest ancestor that
+has one.</p>
 
 <h2>Caveats</h2>
 <ul>

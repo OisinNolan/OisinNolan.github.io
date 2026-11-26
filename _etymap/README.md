@@ -11,35 +11,41 @@ python3 -m venv .venv && .venv/bin/pip install orjson pytest pyyaml
 cd build
 ../.venv/bin/python fetch.py      # ~3.1 GB raw Wiktextract dump -> raw/ (resumable)
 ../.venv/bin/python extract.py    # ~2 min: graph -> build/out/{nodes,edges,en_nl,nl_en}.jsonl
-../.venv/bin/python resolve.py    # ~1 min: pairs, LCAs, ghosts -> build/out/pairs.jsonl etc.
+../.venv/bin/python commonness.py # word commonness (translation-table sizes)
+../.venv/bin/python resolve.py    # ~1 min: translation pairs (for the stats page) -> build/out/pairs.jsonl etc.
+../.venv/bin/python semantic.py   # ~1 min: synonyms, related terms, topical categories -> build/out/semantic.json
+../.venv/bin/python cognates.py   # ~1 min: every word's DAG + cognates + suggestions -> build/out/cog_*
 ../.venv/bin/python shard.py      # writes /etymap/data/
+../.venv/bin/python stats.py      # writes /etymap/stats.json
+../.venv/bin/python highlights.py # writes /etymap/highlights.json (homepage picks)
 ```
 
-Debug one or more words: `../.venv/bin/python resolve.py --words take,egg,hond` (prints chains).
+Debug one or more words: `../.venv/bin/python cognates.py --words hond,wiel` (cognates, suggestions) or
+`resolve.py --words take,egg` (translation pairs).
 Test locally from the repo root: `python3 -m http.server 8000`, then open http://localhost:8000/etymap/.
 
-## Site data schema (`/etymap/data/`)
+## Site data schema (`/etymap/data/`, version 2)
 
-- `meta.json`: `{"buckets": N, "word_buckets": M}` (currently 2048 and 256)
-- `langs.json`: `code -> {name, from, to, lat, lon, radius_km, certainty, note}` (mapped languages
-  from `data/languages.json`, plus name-only entries for other codes)
+- `meta.json`: `{"word_buckets": 2048, "version": 2}`
+- `langs.json`: `code -> {name, from, to, lat, lon, radius_km, certainty, note}`
 - `index-en.json`, `index-nl.json`: sorted headword arrays (autocomplete)
-- `en/<b>.json`, `nl/<b>.json`: `{"words": {word: [[translation, sense, pos, pairId|null], …]},
-  "forms": {inflected form: lemma}}`, where `b = crc32(utf8(word)) % M` as 3 hex digits
-- `p/<crc32(pairId) % N as 3 hex digits>.json`: `{"pairs": {pairId: Pair}, "nodes": {key: [form, lang, gloss?, title?]}}`
-
-`pairId = "en|<en key>~nl|<nl key>"`. A node key is `lang|normalised form` (lowercase, NFC, leading `*`
-removed, macrons/breves removed outside reconstructions).
+- `en/<b>.json`, `nl/<b>.json`, `b = crc32(utf8(word)) % 2048` as 3 hex digits:
 
 ```
-Pair = {
-  "en": key, "nl": key,
-  "A": {"en": [[key, depth, [[parentKey, edgeType, uncertain(0/1), affix?(1)], …]], …], "nl": …},
-  "lca": [key, …],                      // minimal common ancestors, best first
-  "ghosts": [{"from": key, "side": "en"|"nl", "branches": [[key, …], …], "dead": bool}],
-  "flags": {"en": [...], "nl": [...], "loan": "en<nl"|"nl<en"?}   // unknown / uncertain / alt_chain
+{"words": {word: Entry}, "forms": {inflected form: lemma}, "also": {headword that is also a form: lemma},
+ "nodes": {key: [form, lang, gloss?, title?]}}
+Entry = {
+  "d": [Dag, …],          // one per distinct etymology; Dag = [[key, depth, [[parentKey, type, unc, affix?]]], …]
+  "f": [[flag…], …],      // per etymology: unknown / uncertain / alt_chain (omitted when empty)
+  "t": [word, …],         // translations into the other language (omitted when none)
+  "c": [[word, theirEty, myEty, lcaKey, distance, sameMeaning(0/1), graft?], …],
+  "s": [[word here, its cognate, why, via?], …]   // only when "c" is empty
 }
+graft = [[child, parent, type], …]   // lowest edge first; joins the cognate's DAG to lcaKey
 ```
+
+A node key is `lang|normalised form` (lowercase, NFC, leading `*` removed, macrons/breves removed
+outside reconstructions).
 
 Edge types: `inh` inherited, `bor` borrowed, `der` derived, `cal` calque, `cmp` part of a compound.
 

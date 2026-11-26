@@ -66,6 +66,8 @@
   .sw { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 2px; margin-right: 0.35rem; vertical-align: -0.05rem; }
 
   /* two small multiples side by side */
+  h3.sub { font-size: 1rem; margin: 2.2rem 0 0.3rem; }
+  h2.sep { margin-top: 4.2rem; padding-top: 1.6rem; border-top: 1px solid var(--line); }
   .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 1.6rem; margin-top: 1rem; }
   .pair h3 { font-size: 0.95rem; margin: 0 0 0.4rem; display: flex; align-items: center; gap: 0.4rem; }
   .mini { display: grid; grid-template-columns: 7.2rem 1fr; gap: 0.15rem 0.6rem; align-items: center; font-size: 0.85rem; }
@@ -145,10 +147,23 @@
   (c. 1150–1500).</dd>
 </dl>
 </details>
-<p class="lede">Statistics across every English and Dutch word in Wiktionary that has a translation into the
-other language: how often a word and its translation are related, which ancestor they share, where each language
-got its words from, and which related words are hiding in plain sight.</p>
+<p class="lede">Statistics across the English and Dutch words in Wiktionary: how many have a relative in the other
+language and how far back they meet, how often a word and its translation are related, where each language got its
+words from, and which related words are hiding in plain sight.</p>
 
+<h2>Every relative, not just translations</h2>
+<p class="prose">Etymap looks for any word in the other language that shares an ancestor with yours, however distant.
+For each word, the bars show where it meets its first (closest-sounding) relative.</p>
+<div class="tiles" id="cogtiles"></div>
+<div class="pair" id="cogbands"></div>
+<h3 class="sub">Distant cousins</h3>
+<p class="prose">Dutch words whose closest English relative is obvious, and a much more distant one that meets them in
+Proto-Indo-European, five or six thousand years ago.</p>
+<table id="far"><thead><tr><th>Dutch</th><th>close relative</th><th>distant relative</th><th>shared PIE root</th></tr></thead><tbody></tbody></table>
+
+<h2 class="sep">Words and their translations</h2>
+<p class="prose">The rest of this page looks at each word's <em>translation</em> into the other language: when are a
+word and its translation related?</p>
 <div class="tiles" id="tiles"></div>
 <p class="note">Only single words are counted, not phrases. Where a word has several translations, the statistics
 use its main one, so each word counts once. Click any example to open it on the map.</p>
@@ -196,7 +211,7 @@ but are no longer the usual word for it.</p>
 <div class="cards" id="cousins"></div>
 <button class="more" id="cousins-more" type="button">Show more</button>
 <p class="note">Found automatically from Wiktionary's lists of descendant words, so a few are wrong. This usually
-happens where two different words are spelled the same (homographs).</p>
+happens where two different words are spelled the same (homographs). Click a pair to see how they're related.</p>
 
 <h2>How reliable is the data?</h2>
 <p class="prose">Wiktionary marks where scholars are unsure, and Etymap keeps track of it. The share of headwords
