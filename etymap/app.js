@@ -1240,6 +1240,13 @@ for (const b of document.querySelectorAll("#lang button")) b.addEventListener("c
   else { setLang(lng); q.value = ""; closeList(); q.focus(); }
 });
 
+// the title goes back to the start page, keeping the language you type in
+$("#homelink").addEventListener("click", (e) => {
+  e.preventDefault();
+  $("#q").value = "";
+  location.hash = state.lang === "en" ? "#en" : "#nl";
+});
+
 /* ---------- boot ---------- */
 
 window.addEventListener("hashchange", route);

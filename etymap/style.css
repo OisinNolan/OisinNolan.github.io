@@ -50,6 +50,8 @@ button { font: inherit; color: inherit; }
 .home::before { content: "← "; }
 .home:hover { color: var(--text); }
 .brand { font: 600 1.15rem/1 var(--sans); letter-spacing: -0.01em; margin: 0; }
+.brand a { text-decoration: none; color: inherit; }
+.brand a:hover { color: var(--accent); }
 .search { flex: 1; display: flex; gap: 0.5rem; max-width: 30rem; margin-left: auto; }
 .langsw { display: inline-flex; border: 1px solid var(--line); border-radius: 99px; padding: 2px; flex: none; }
 .langsw button {
